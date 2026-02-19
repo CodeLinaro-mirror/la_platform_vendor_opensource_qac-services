@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.  
+SPDX-License-Identifier: BSD-3-Clause-Clear 
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+        android:id="@+id/statusText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Status: Not connected"
+        android:textSize="16sp"
+        android:padding="8dp" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="8dp" />
+
+    <TextView
+        android:id="@+id/configLabel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Custom Configuration"
+        android:textStyle="bold"
+        android:textSize="14sp" />
+
+    <EditText
+        android:id="@+id/configPathInput"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Enter config file path (leave empty for default)"
+        android:inputType="text"
+        android:layout_marginTop="4dp"
+        android:padding="8dp" />
+
+    <Button
+        android:id="@+id/btnParseConfig"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Parse Config"
+        android:layout_marginTop="8dp" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="8dp" />
+
+    <Button
+        android:id="@+id/btnBind"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Bind Service"
+        android:layout_marginTop="8dp" />
+
+    <Button
+        android:id="@+id/btnStartCapture"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Test startCapture"
+        android:layout_marginTop="8dp"
+        android:enabled="false" />
+
+    <Button
+        android:id="@+id/btnStopCapture"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Test stopCapture"
+        android:layout_marginTop="8dp"
+        android:enabled="false" />
+
+    <Button
+        android:id="@+id/btnUpdateConfig"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Test updateCaptureConfig"
+        android:layout_marginTop="8dp"
+        android:enabled="false" />
+
+    <Button
+        android:id="@+id/btnDeleteCapture"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Test deleteCapture"
+        android:layout_marginTop="8dp"
+        android:enabled="false" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="16dp" />
+
+    <TextView
+        android:id="@+id/scenarioLabel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Test Scenarios"
+        android:textStyle="bold" />
+
+    <Spinner
+        android:id="@+id/scenarioSpinner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp" />
+
+    <Button
+        android:id="@+id/btnRunScenario"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Run Scenario"
+        android:layout_marginTop="8dp"
+        android:enabled="false" />
+
+    <TextView
+        android:id="@+id/scenarioResult"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:padding="8dp"
+        android:background="#EEEEEE"
+        android:textSize="14sp"
+        android:textColor="#000000"
+        android:text="Scenario output will appear here" />
+
+</LinearLayout>

@@ -1,0 +1,387 @@
+/*
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.  
+ * SPDX-License-Identifier: BSD-3-Clause-Clear 
+ */
+
+package com.qualcomm.qaior.screen_understanding.sample_app;
+
+import android.content.ComponentName;
+import android.content.Context;
+import android.content.Intent;
+import android.content.ServiceConnection;
+import android.content.pm.PackageManager;
+import android.os.Build;
+import android.os.Bundle;
+import android.os.IBinder;
+import android.os.RemoteException;
+import android.util.Log;
+import android.widget.ArrayAdapter;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.Spinner;
+import android.widget.TextView;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
+import com.qualcomm.qaior.screen_understanding.IScreenUnderstandingService;
+import com.qualcomm.qaior.screen_understanding.sample_app.ConfigLoader;
+import com.qualcomm.qaior.screen_understanding.sample_app.SampleConfig;
+import com.qualcomm.qaior.screen_understanding.sample_app.TestScenario;
+import com.qualcomm.qaior.screen_understanding.sample_app.TestScenarioExecutor;
+import com.qualcomm.qaior.screen_understanding.sample_app.TestScenarioLoader;
+import java.util.List;
+import org.json.JSONObject;
+
+public class ScreenUnderstandingSampleActivity extends AppCompatActivity {
+    private static final String TAG = "ScreenUnderstandingSample";
+    private static final String SERVICE_PACKAGE = "com.qualcomm.qaior.screen_understanding";
+    private static final String SERVICE_ACTION =
+        "com.qualcomm.qaior.screen_understanding.IScreenUnderstandingService";
+    private static final String SCREEN_CAPTURE_PERMISSION =
+        "com.qualcomm.qaior.permission.SCREEN_CAPTURE";
+    private static final int PERMISSION_REQUEST_CODE = 100;
+    private static final int STORAGE_PERMISSION_REQUEST_CODE = 101;
+
+    private IScreenUnderstandingService service;
+    private boolean isBound = false;
+    private String currentSessionId = null;
+    private TextView statusText;
+    private Button btnBind;
+    private Button btnStartCapture;
+    private Button btnStopCapture;
+    private Button btnUpdateConfig;
+    private Button btnDeleteCapture;
+    private Button btnRunScenario;
+    private Button btnParseConfig;
+    private EditText configPathInput;
+    private Spinner scenarioSpinner;
+    private TextView scenarioResult;
+
+    private SampleConfig sampleConfig;
+    private List<TestScenario> scenarios;
+    private boolean pendingConfigParse = false;
+
+    private ServiceConnection connection = new ServiceConnection() {
+        @Override
+        public void onServiceConnected(ComponentName name, IBinder binder) {
+            Log.i(TAG, "Service connected: " + name);
+            service = IScreenUnderstandingService.Stub.asInterface(binder);
+            isBound = true;
+            updateUI();
+            statusText.setText("Service connected");
+        }
+
+        @Override
+        public void onServiceDisconnected(ComponentName name) {
+            Log.i(TAG, "Service disconnected: " + name);
+            service = null;
+            isBound = false;
+            currentSessionId = null;
+            updateUI();
+            statusText.setText("Service disconnected");
+        }
+    };
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_test);
+
+        // Check and request permission
+        if (ContextCompat.checkSelfPermission(this, SCREEN_CAPTURE_PERMISSION)
+            != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(
+                this, new String[] {SCREEN_CAPTURE_PERMISSION}, PERMISSION_REQUEST_CODE);
+        }
+
+        statusText = findViewById(R.id.statusText);
+        btnBind = findViewById(R.id.btnBind);
+        btnStartCapture = findViewById(R.id.btnStartCapture);
+        btnStopCapture = findViewById(R.id.btnStopCapture);
+        btnUpdateConfig = findViewById(R.id.btnUpdateConfig);
+        btnDeleteCapture = findViewById(R.id.btnDeleteCapture);
+        btnRunScenario = findViewById(R.id.btnRunScenario);
+        btnParseConfig = findViewById(R.id.btnParseConfig);
+        configPathInput = findViewById(R.id.configPathInput);
+        scenarioSpinner = findViewById(R.id.scenarioSpinner);
+        scenarioResult = findViewById(R.id.scenarioResult);
+
+        btnBind.setOnClickListener(v -> bindService());
+        btnStartCapture.setOnClickListener(v -> testStartCapture());
+        btnStopCapture.setOnClickListener(v -> testStopCapture());
+        btnUpdateConfig.setOnClickListener(v -> testUpdateConfig());
+        btnDeleteCapture.setOnClickListener(v -> testDeleteCapture());
+        btnRunScenario.setOnClickListener(v -> runSelectedScenario());
+        btnParseConfig.setOnClickListener(v -> parseCustomConfig());
+
+        // Load configurable parameters (fallback to defaults on error)
+        sampleConfig = ConfigLoader.load(getApplicationContext());
+
+        // Load test scenarios
+        scenarios = TestScenarioLoader.load(getApplicationContext());
+        ArrayAdapter<String> adapter =
+            new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, scenarioNames());
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        scenarioSpinner.setAdapter(adapter);
+
+        updateUI();
+    }
+
+    @Override
+    public void onRequestPermissionsResult(
+        int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == PERMISSION_REQUEST_CODE) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                statusText.setText("Screen capture permission granted");
+            } else {
+                statusText.setText(
+                    "Screen capture permission denied - app may not function correctly");
+            }
+        } else if (requestCode == STORAGE_PERMISSION_REQUEST_CODE) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                statusText.setText("Storage permission granted");
+                // Re-attempt the config parsing now that we have permission
+                if (pendingConfigParse) {
+                    parseCustomConfig();
+                }
+            } else {
+                statusText.setText("Storage permission denied - cannot load external config files");
+                pendingConfigParse = false;
+            }
+        }
+    }
+
+    private void bindService() {
+        if (isBound) {
+            statusText.setText("Service already bound");
+            return;
+        }
+
+        Intent intent = new Intent(SERVICE_ACTION);
+        intent.setPackage(SERVICE_PACKAGE);
+
+        boolean result = bindService(intent, connection, Context.BIND_AUTO_CREATE);
+        Log.i(TAG, "bindService result: " + result);
+
+        if (result) {
+            statusText.setText("Binding in progress...");
+            btnBind.setEnabled(false);
+        } else {
+            statusText.setText(
+                "Binding failed: Service not found. Ensure ScreenUnderstandingService is installed.");
+            Log.e(TAG,
+                "Failed to bind to service. Check if service package exists: " + SERVICE_PACKAGE);
+        }
+    }
+
+    private void testStartCapture() {
+        if (!isBound || service == null) {
+            statusText.setText("Error: Service not bound");
+            return;
+        }
+
+        try {
+            currentSessionId = "test_" + System.currentTimeMillis();
+            String config = createCaptureConfig(currentSessionId);
+            Log.i(TAG, "Calling startCapture with config: " + config);
+            service.startCapture(config);
+            statusText.setText("startCapture called with session: " + currentSessionId);
+        } catch (RemoteException e) {
+            Log.e(TAG, "Error calling startCapture", e);
+            statusText.setText("Error: " + e.getMessage());
+        } catch (Exception e) {
+            Log.e(TAG, "Error creating config", e);
+            statusText.setText("Error creating config: " + e.getMessage());
+        }
+    }
+
+    private void testStopCapture() {
+        if (!isBound || service == null) {
+            statusText.setText("Error: Service not bound");
+            return;
+        }
+
+        try {
+            Log.i(TAG, "Calling stopCapture");
+            service.stopCapture();
+            statusText.setText("stopCapture called");
+            currentSessionId = null;
+        } catch (RemoteException e) {
+            Log.e(TAG, "Error calling stopCapture", e);
+            statusText.setText("Error: " + e.getMessage());
+        }
+    }
+
+    private void testUpdateConfig() {
+        if (!isBound || service == null) {
+            statusText.setText("Error: Service not bound");
+            return;
+        }
+
+        if (currentSessionId == null) {
+            statusText.setText("Error: No active session. Start capture first.");
+            return;
+        }
+
+        try {
+            String config = createUpdateConfig(currentSessionId);
+            Log.i(TAG, "Calling updateCaptureConfig with config: " + config);
+            service.updateCaptureConfig(config);
+            statusText.setText("updateCaptureConfig called");
+        } catch (RemoteException e) {
+            Log.e(TAG, "Error calling updateCaptureConfig", e);
+            statusText.setText("Error: " + e.getMessage());
+        } catch (Exception e) {
+            Log.e(TAG, "Error creating config", e);
+            statusText.setText("Error creating config: " + e.getMessage());
+        }
+    }
+
+    private void testDeleteCapture() {
+        if (!isBound || service == null) {
+            statusText.setText("Error: Service not bound");
+            return;
+        }
+
+        if (currentSessionId == null) {
+            statusText.setText("Error: No active session. Start capture first.");
+            return;
+        }
+
+        try {
+            String deleteConfig = createDeleteConfig(currentSessionId);
+            Log.i(TAG, "Calling deleteCapture with config: " + deleteConfig);
+            service.deleteCapture(deleteConfig);
+            statusText.setText("deleteCapture called");
+            currentSessionId = null;
+        } catch (RemoteException e) {
+            Log.e(TAG, "Error calling deleteCapture", e);
+            statusText.setText("Error: " + e.getMessage());
+        } catch (Exception e) {
+            Log.e(TAG, "Error creating config", e);
+            statusText.setText("Error creating config: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Create a complete capture configuration JSON with all required parameters.
+     */
+    private String createCaptureConfig(String sessionId) throws Exception {
+        JSONObject config = cloneJson(sampleConfig.getStartConfig());
+        config.put("sessionId", sessionId);
+        return config.toString();
+    }
+
+    /**
+     * Create an update configuration JSON.
+     */
+    private String createUpdateConfig(String sessionId) throws Exception {
+        JSONObject config = cloneJson(sampleConfig.getUpdateConfig());
+        config.put("sessionId", sessionId);
+        return config.toString();
+    }
+
+    /**
+     * Create a delete configuration JSON.
+     */
+    private String createDeleteConfig(String sessionId) throws Exception {
+        JSONObject config = cloneJson(sampleConfig.getDeleteConfig());
+        config.put("sessionId", sessionId);
+        return config.toString();
+    }
+
+    private JSONObject cloneJson(JSONObject src) throws Exception {
+        return new JSONObject(src.toString());
+    }
+
+    // ==== Scenario support ====
+
+    private String[] scenarioNames() {
+        String[] arr = new String[scenarios.size()];
+        for (int i = 0; i < scenarios.size(); i++) {
+            arr[i] = scenarios.get(i).getName();
+        }
+        return arr;
+    }
+
+    private void parseCustomConfig() {
+        // Check for READ_EXTERNAL_STORAGE permission on Android 6.0+ but below Android 13
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+            && Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(
+                    this, android.Manifest.permission.READ_EXTERNAL_STORAGE)
+                != PackageManager.PERMISSION_GRANTED) {
+                pendingConfigParse = true;
+                ActivityCompat.requestPermissions(this,
+                    new String[] {android.Manifest.permission.READ_EXTERNAL_STORAGE},
+                    STORAGE_PERMISSION_REQUEST_CODE);
+                statusText.setText("Requesting storage permission...");
+                return;
+            }
+        }
+        pendingConfigParse = false;
+
+        String filePath = configPathInput.getText().toString().trim();
+        if (filePath.isEmpty()) {
+            statusText.setText("Config path is empty, using default config from assets");
+            sampleConfig = ConfigLoader.load(getApplicationContext());
+            return;
+        }
+
+        // Warn if session is active
+        if (currentSessionId != null) {
+            statusText.setText(
+                "Warning: Active session detected. Stop capture before changing config.");
+            Log.w(TAG, "Attempted to change config while session active: " + currentSessionId);
+            return;
+        }
+
+        ConfigLoader.LoadResult result =
+            ConfigLoader.loadFromFile(getApplicationContext(), filePath);
+        if (result.isSuccess()) {
+            sampleConfig = result.getConfig();
+            statusText.setText("Config successfully loaded from: " + filePath);
+            Log.i(TAG, "Config updated and will be used for subsequent operations");
+        } else {
+            sampleConfig = result.getConfig();
+            String errorMsg = result.getErrorMessage();
+            statusText.setText("Failed to load config: " + errorMsg + ". Using previous config.");
+            Log.w(TAG, "Config load failed: " + errorMsg);
+        }
+    }
+
+    private void runSelectedScenario() {
+        if (!isBound || service == null) {
+            statusText.setText("Error: Service not bound");
+            return;
+        }
+        int idx = scenarioSpinner.getSelectedItemPosition();
+        if (idx < 0 || idx >= scenarios.size()) {
+            statusText.setText("Error: No scenario selected");
+            return;
+        }
+        TestScenario scenario = scenarios.get(idx);
+        TestScenarioExecutor executor = new TestScenarioExecutor(service, sampleConfig);
+        String result = executor.run(scenario);
+        scenarioResult.setText(result);
+    }
+
+    private void updateUI() {
+        btnBind.setEnabled(!isBound);
+        btnStartCapture.setEnabled(isBound);
+        btnStopCapture.setEnabled(isBound);
+        btnUpdateConfig.setEnabled(isBound);
+        btnDeleteCapture.setEnabled(isBound);
+        btnRunScenario.setEnabled(isBound);
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (isBound) {
+            unbindService(connection);
+            isBound = false;
+        }
+    }
+}

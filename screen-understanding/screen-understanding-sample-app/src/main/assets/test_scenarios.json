@@ -1,0 +1,41 @@
+[
+    {
+        "name": "Start and Stop",
+        "description": "Basic start then stop flow",
+        "operations": [
+            {
+                "op": "start"
+            },
+            {
+                "op": "stop"
+            }
+        ]
+    },
+    {
+        "name": "Full Flow",
+        "description": "Start, update, stop, then delete session",
+        "operations": [
+            {
+                "op": "start"
+            },
+            {
+                "op": "update"
+            },
+            {
+                "op": "stop"
+            },
+            {
+                "op": "delete"
+            }
+        ]
+    },
+    {
+        "name": "Update without Start",
+        "description": "Negative path: update before start (should log failure)",
+        "operations": [
+            {
+                "op": "update"
+            }
+        ]
+    }
+]

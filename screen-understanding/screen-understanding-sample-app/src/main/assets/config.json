@@ -1,0 +1,39 @@
+{
+    "startConfig": {
+        "width": 1920,
+        "height": 1080,
+        "format": 1,
+        "framerate": 30,
+        "activeUserId": 0,
+        "appList": [
+            {
+                "packageName": "com.example.sampleapp1",
+                "isSensitive": false
+            },
+            {
+                "packageName": "com.example.sampleapp2",
+                "isSensitive": true
+            }
+        ],
+        "smartConfig": {
+            "enableSmartSelection": true,
+            "keypointThreshold": 12,
+            "maxDetections": 500,
+            "inputWidth": 288,
+            "inputHeight": 640,
+            "pixelFormat": 1
+        }
+    },
+    "updateConfig": {
+        "enabled": false,
+        "appList": [
+            {
+                "packageName": "com.example.sampleapp1",
+                "isSensitive": true
+            }
+        ]
+    },
+    "deleteConfig": {
+        "deleteAll": false
+    }
+}
