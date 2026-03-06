@@ -1,6 +1,6 @@
 /*
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.  
- * SPDX-License-Identifier: BSD-3-Clause-Clear 
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: BSD-3-Clause-Clear
  */
 
 package com.qualcomm.qaior.screen_understanding.sample_app;
@@ -14,13 +14,16 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.os.RemoteException;
+import android.os.SystemClock;
 import android.util.Log;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.CompoundButton;
 import android.widget.EditText;
 import android.widget.Spinner;
 import android.widget.TextView;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.SwitchCompat;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import com.qualcomm.qaior.screen_understanding.IScreenUnderstandingService;
@@ -43,10 +46,13 @@ public class ScreenUnderstandingSampleActivity extends AppCompatActivity {
     private static final int STORAGE_PERMISSION_REQUEST_CODE = 101;
 
     private IScreenUnderstandingService service;
+    private CaptureDataClient mDataClient = null;
     private boolean isBound = false;
+    private boolean isDataServiceBound = false;
     private String currentSessionId = null;
     private TextView statusText;
     private Button btnBind;
+    private Button btnBindData;
     private Button btnStartCapture;
     private Button btnStopCapture;
     private Button btnUpdateConfig;
@@ -56,6 +62,8 @@ public class ScreenUnderstandingSampleActivity extends AppCompatActivity {
     private EditText configPathInput;
     private Spinner scenarioSpinner;
     private TextView scenarioResult;
+    private SwitchCompat switchDoCompression;
+    private SwitchCompat switchDumpScreenshot;
 
     private SampleConfig sampleConfig;
     private List<TestScenario> scenarios;
@@ -82,6 +90,18 @@ public class ScreenUnderstandingSampleActivity extends AppCompatActivity {
         }
     };
 
+    private CaptureDataClient.ConnectionListener mDataClientConnectionListener =
+        new CaptureDataClient.ConnectionListener() {
+            @Override
+            public void onServiceConnected(long sessionId) {
+                if (sessionId == -1) {
+                    statusText.setText("Data service connection failed");
+                } else {
+                    statusText.setText("Data service connected with session: " + sessionId);
+                }
+            }
+        };
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -96,6 +116,7 @@ public class ScreenUnderstandingSampleActivity extends AppCompatActivity {
 
         statusText = findViewById(R.id.statusText);
         btnBind = findViewById(R.id.btnBind);
+        btnBindData = findViewById(R.id.btnBindData);
         btnStartCapture = findViewById(R.id.btnStartCapture);
         btnStopCapture = findViewById(R.id.btnStopCapture);
         btnUpdateConfig = findViewById(R.id.btnUpdateConfig);
@@ -105,14 +126,22 @@ public class ScreenUnderstandingSampleActivity extends AppCompatActivity {
         configPathInput = findViewById(R.id.configPathInput);
         scenarioSpinner = findViewById(R.id.scenarioSpinner);
         scenarioResult = findViewById(R.id.scenarioResult);
+        switchDoCompression = findViewById(R.id.switchDoCompression);
+        switchDumpScreenshot = findViewById(R.id.switchDumpScreenshot);
 
         btnBind.setOnClickListener(v -> bindService());
+        btnBindData.setOnClickListener(v -> bindDataService());
         btnStartCapture.setOnClickListener(v -> testStartCapture());
         btnStopCapture.setOnClickListener(v -> testStopCapture());
         btnUpdateConfig.setOnClickListener(v -> testUpdateConfig());
         btnDeleteCapture.setOnClickListener(v -> testDeleteCapture());
         btnRunScenario.setOnClickListener(v -> runSelectedScenario());
         btnParseConfig.setOnClickListener(v -> parseCustomConfig());
+
+        switchDoCompression.setOnCheckedChangeListener(
+            (buttonView, isChecked) -> onDoCompressionChanged(isChecked));
+        switchDumpScreenshot.setOnCheckedChangeListener(
+            (buttonView, isChecked) -> onDumpScreenshotChanged(isChecked));
 
         // Load configurable parameters (fallback to defaults on error)
         sampleConfig = ConfigLoader.load(getApplicationContext());
@@ -175,6 +204,38 @@ public class ScreenUnderstandingSampleActivity extends AppCompatActivity {
         }
     }
 
+    private void bindDataService() {
+        if (mDataClient == null) {
+            // use default config (all)
+            mDataClient = new CaptureDataClient(this);
+            isDataServiceBound = true;
+            updateUI();
+            statusText.setText("Data service bound");
+        } else {
+            statusText.setText("Data service already bound");
+        }
+    }
+
+    private void onDoCompressionChanged(boolean isChecked) {
+        Log.i(TAG, "doCompression changed to: " + isChecked);
+        statusText.setText("doCompression: " + (isChecked ? "enabled" : "disabled"));
+        if (mDataClient != null) {
+            try {
+                mDataClient.setCompressionEnabled(isChecked);
+            } catch (Exception e) {
+                statusText.setText("Change Config Error: " + e.getMessage());
+            }
+        }
+    }
+
+    private void onDumpScreenshotChanged(boolean isChecked) {
+        Log.i(TAG, "DumpScreenshot changed to: " + isChecked);
+        statusText.setText("DumpScreenshot: " + (isChecked ? "enabled" : "disabled"));
+        if (mDataClient != null) {
+            mDataClient.setDoScreenshotDump(isChecked);
+        }
+    }
+
     private void testStartCapture() {
         if (!isBound || service == null) {
             statusText.setText("Error: Service not bound");
@@ -185,6 +246,8 @@ public class ScreenUnderstandingSampleActivity extends AppCompatActivity {
             currentSessionId = "test_" + System.currentTimeMillis();
             String config = createCaptureConfig(currentSessionId);
             Log.i(TAG, "Calling startCapture with config: " + config);
+            long startCaptureKPI = SystemClock.elapsedRealtime();
+            Log.v(TAG, "Start Capture Invoked at Timestamp: " + startCaptureKPI);
             service.startCapture(config);
             statusText.setText("startCapture called with session: " + currentSessionId);
         } catch (RemoteException e) {
@@ -369,6 +432,7 @@ public class ScreenUnderstandingSampleActivity extends AppCompatActivity {
 
     private void updateUI() {
         btnBind.setEnabled(!isBound);
+        btnBindData.setEnabled(!isDataServiceBound);
         btnStartCapture.setEnabled(isBound);
         btnStopCapture.setEnabled(isBound);
         btnUpdateConfig.setEnabled(isBound);
@@ -382,6 +446,11 @@ public class ScreenUnderstandingSampleActivity extends AppCompatActivity {
         if (isBound) {
             unbindService(connection);
             isBound = false;
+        }
+        if (mDataClient != null) {
+            mDataClient.teardown();
+            mDataClient = null;
+            isDataServiceBound = false;
         }
     }
 }

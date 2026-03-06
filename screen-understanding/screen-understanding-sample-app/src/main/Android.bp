@@ -1,29 +1,26 @@
 android_app {
     name: "screenunderstanding",
-    
+
     srcs: [
         "java/**/*.java",
     ],
-    
+
     manifest: "AndroidManifest.xml",
     resource_dirs: ["res"],
     asset_dirs: ["assets"],
 
-    libs: [
-        "screenunderstanding-aidl-V1-java",
-        "trigger-display-capture-aidl-V1-java",
-    ],
-    
     static_libs: [
+        "trigger-display-capture-aidl-V1-java",
+        "screenunderstanding-aidl-V1-java",
         "androidx.appcompat_appcompat",
         "androidx.core_core",
     ],
-    
+
     platform_apis: true,
     certificate: "platform",
     privileged: true,
     system_ext_specific: true,
-    
+
     optimize: {
         enabled: false,
     },
