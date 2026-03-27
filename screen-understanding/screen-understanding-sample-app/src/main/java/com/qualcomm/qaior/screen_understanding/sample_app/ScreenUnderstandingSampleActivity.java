@@ -26,7 +26,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.SwitchCompat;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
-import com.qualcomm.qaior.screen_understanding.IScreenUnderstandingService;
+import vendor.qti.qaior.screen_understanding.IScreenUnderstandingService;
 import com.qualcomm.qaior.screen_understanding.sample_app.ConfigLoader;
 import com.qualcomm.qaior.screen_understanding.sample_app.SampleConfig;
 import com.qualcomm.qaior.screen_understanding.sample_app.TestScenario;
@@ -39,7 +39,7 @@ public class ScreenUnderstandingSampleActivity extends AppCompatActivity {
     private static final String TAG = "ScreenUnderstandingSample";
     private static final String SERVICE_PACKAGE = "com.qualcomm.qaior.screen_understanding";
     private static final String SERVICE_ACTION =
-        "com.qualcomm.qaior.screen_understanding.IScreenUnderstandingService";
+        "vendor.qti.qaior.screen_understanding.IScreenUnderstandingService";
     private static final String SCREEN_CAPTURE_PERMISSION =
         "com.qualcomm.qaior.permission.SCREEN_CAPTURE";
     private static final int PERMISSION_REQUEST_CODE = 100;
