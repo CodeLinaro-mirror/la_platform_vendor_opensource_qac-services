@@ -4,8 +4,8 @@ include vendor/qcom/opensource/qac-services/screen-understanding/qac_services_ve
 endif
 
 # Add QACS phony targets
-.PHONY: qac_tp
-
-qac_tp: $(QAC_SU)
-
-$(warning "QAC Techpack configuration QAC_SU = $(QAC_SU)")
+#.PHONY: qac_tp
+#
+#qac_tp: $(QAC_SU)
+#
+#$(warning "QAC Techpack configuration QAC_SU = $(QAC_SU)")
