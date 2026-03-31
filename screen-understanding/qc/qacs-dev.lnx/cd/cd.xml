@@ -1,9 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<component>
-    <configuration name="qacs-dev.lnx" version="1.0" state="development"/>
-    <packages>
-        <package type="LA" project="platform/vendor/opensource/qac-services">
-            <prebuilt_artifact ship="" path=""/>
-        </package>
-    </packages>
-</component>
