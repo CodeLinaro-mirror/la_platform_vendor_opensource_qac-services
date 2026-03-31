@@ -48,7 +48,7 @@
             android:permission="com.qualcomm.qaior.permission.SCREEN_CAPTURE">
             <intent-filter>
                 <action android:name="com.qualcomm.qaior.screen_understanding.ACTION_START" />
-                <action android:name="com.qualcomm.qaior.screen_understanding.IScreenUnderstandingService" />
+                <action android:name="vendor.qti.qaior.screen_understanding.IScreenUnderstandingService" />
             </intent-filter>
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"

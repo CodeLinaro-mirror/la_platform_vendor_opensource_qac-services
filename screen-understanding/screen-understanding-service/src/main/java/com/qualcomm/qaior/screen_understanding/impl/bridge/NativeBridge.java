@@ -157,7 +157,7 @@ public class NativeBridge {
             int numAttempts = 1;
             while (numAttempts <= NUM_RETRIES) {
                 // Get service binder
-                mServiceBinder = ServiceManager.waitForService(SERVICE_NAME);
+                mServiceBinder = ServiceManager.checkService(SERVICE_NAME);
 
                 if (mServiceBinder != null) {
                     break;

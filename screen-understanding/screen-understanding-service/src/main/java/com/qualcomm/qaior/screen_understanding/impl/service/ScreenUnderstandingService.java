@@ -117,16 +117,6 @@ public class ScreenUnderstandingService extends Service implements NativeBridge.
                     Log.e(tag, "NativeBridge not connected");
                 }
             }
-
-            @Override
-            public int getInterfaceVersion() {
-                return IScreenUnderstandingService.VERSION;
-            }
-
-            @Override
-            public String getInterfaceHash() {
-                return IScreenUnderstandingService.HASH;
-            }
         };
 
     /* AIDL Binder end */
@@ -406,7 +396,7 @@ public class ScreenUnderstandingService extends Service implements NativeBridge.
     }
 
     private final void stopForegroundService() {
-        stopForeground(FOREGROUND_NOTIFICATION_ID);
+        stopForeground(STOP_FOREGROUND_REMOVE);
         isForeground = false;
         currentForegroundServiceType = ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE;
     }

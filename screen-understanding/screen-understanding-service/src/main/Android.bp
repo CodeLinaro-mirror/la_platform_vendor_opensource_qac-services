@@ -20,8 +20,8 @@ android_app {
         "androidx.appcompat_appcompat",
         "androidx.core_core",
         "androidx.activity_activity",
-        "vendor.qti.screenunderstanding-aidl-V1-java",
-        "vendor.qti.trigger-display-capture-aidl-V1-java",
+        "vendor.qti.screen_understanding.display_capture-V1-java",
+        "vendor.qti.trigger-display-capture-aidl-java",
     ],
 
     platform_apis: true,

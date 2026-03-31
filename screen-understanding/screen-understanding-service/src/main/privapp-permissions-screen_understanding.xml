@@ -8,6 +8,7 @@ SPDX-License-Identifier: BSD-3-Clause-Clear
         <permission name="android.permission.POST_NOTIFICATIONS"/>
         <permission name="android.permission.FOREGROUND_SERVICE"/>
         <permission name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"/>
+        <permission name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
         <permission name="android.permission.SYSTEM_ALERT_WINDOW"/>
     </privapp-permissions>
 </permissions>
