@@ -27,7 +27,7 @@ import android.provider.Settings.Secure;
 import android.util.Log;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.ServiceCompat;
-import com.qualcomm.qaior.screen_understanding.IScreenUnderstandingService;
+import vendor.qti.qaior.screen_understanding.IScreenUnderstandingService;
 import com.qualcomm.qaior.screen_understanding.R;
 import com.qualcomm.qaior.screen_understanding.impl.MainActivity;
 import com.qualcomm.qaior.screen_understanding.impl.accessibility.DisplayCaptureAccessibilityService;

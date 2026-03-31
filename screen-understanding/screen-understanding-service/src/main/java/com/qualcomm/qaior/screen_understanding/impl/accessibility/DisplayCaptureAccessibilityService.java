@@ -5,6 +5,9 @@
 
 package com.qualcomm.qaior.screen_understanding.impl.accessibility;
 
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityServiceInfo;
 import android.content.BroadcastReceiver;
@@ -25,6 +28,7 @@ import android.util.Log;
 import android.view.Display;
 import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
+import com.qualcomm.qaior.screen_understanding.R;
 import com.qualcomm.qaior.screen_understanding.impl.MainActivity;
 import com.qualcomm.qaior.screen_understanding.impl.bridge.NativeBridge;
 import com.qualcomm.qaior.screen_understanding.impl.utils.Commands;
@@ -38,6 +42,7 @@ import java.util.Objects;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+import androidx.core.app.NotificationCompat;
 
 public class DisplayCaptureAccessibilityService extends AccessibilityService {
     private String logTag = "ScreenUnderstanding.AccessibilityService";
@@ -55,6 +60,10 @@ public class DisplayCaptureAccessibilityService extends AccessibilityService {
     private int captureWidth;
     private int captureHeight;
     private int captureDensity;
+
+    private static final String NOTIFICATION_CHANNEL_ID = "accessibility_screen_capture";
+    private static final int NOTIFICATION_ID = 2001;
+    private NotificationManager notificationManager;
 
     // BroadcastReceiver for commands
     private final BroadcastReceiver commandReceiver = new BroadcastReceiver() {
@@ -93,6 +102,9 @@ public class DisplayCaptureAccessibilityService extends AccessibilityService {
         workerThread = new HandlerThread("MP-Capture");
         workerThread.start();
         worker = new Handler(workerThread.getLooper());
+
+        notificationManager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        createNotificationChannel();
 
         // Register BroadcastReceiver (RECEIVER_EXPORTED requires API 33+)
         IntentFilter filter = new IntentFilter(Commands.ACTION_FORWARD_TO_ACCESSIBILITY);
@@ -142,6 +154,63 @@ public class DisplayCaptureAccessibilityService extends AccessibilityService {
         }
     };
 
+    /**
+     * Creates notification channel for screen capture indicator.
+     */
+    private void createNotificationChannel() {
+        NotificationChannel channel = new NotificationChannel(
+            NOTIFICATION_CHANNEL_ID,
+            "Screen Capture Indicator",
+            NotificationManager.IMPORTANCE_LOW
+        );
+        channel.setDescription("Shows when accessibility service is capturing screen");
+        channel.setShowBadge(false);
+
+        if (notificationManager != null) {
+            notificationManager.createNotificationChannel(channel);
+        }
+    }
+
+    /**
+     * Builds notification for recording.
+     */
+    private Notification buildRecordingNotification() {
+        return new NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_recording_dot)
+            .setContentTitle("Recording Screen")
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setOngoing(true)
+            .setShowWhen(false)
+            .build();
+    }
+
+    /**
+     * Shows recording notification when capturing without MediaProjection.
+     * Only shown when ongoingSession is true and MediaProjection permission is not available.
+     */
+    private void showRecordingNotification() {
+        if (!ongoingSession || SharedObjects.hasPermission()) {
+            // Don't show notification if no session or MediaProjection is handling it
+            hideRecordingNotification();
+            return;
+        }
+
+        if (notificationManager != null) {
+            notificationManager.notify(NOTIFICATION_ID, buildRecordingNotification());
+            Log.i(logTag, "Recording notification shown");
+        }
+    }
+
+    /**
+     * Hides the recording notification.
+     */
+    private void hideRecordingNotification() {
+        if (notificationManager != null) {
+            notificationManager.cancel(NOTIFICATION_ID);
+            Log.i(logTag, "Recording notification hidden");
+        }
+    }
+
     private void startSession(String config) {
         Log.i(logTag, "new session starts here");
         ongoingSession = true;
@@ -178,6 +247,11 @@ public class DisplayCaptureAccessibilityService extends AccessibilityService {
                     // Create persistent VirtualDisplay for fast captures
                     setupPersistentCapture();
                 }
+
+                // Show notification if not using MediaProjection
+                if (!SharedObjects.hasPermission()) {
+                    showRecordingNotification();
+                }
             }
         } catch (JSONException e) {
             Log.e(logTag, "Failed to create JSON for start session.", e);
@@ -198,6 +272,9 @@ public class DisplayCaptureAccessibilityService extends AccessibilityService {
             info.packageNames = new String[] {}; // Empty array means listen to no packages
             setServiceInfo(info); // Apply the updated config
         }
+
+        // Hide notification
+        hideRecordingNotification();
 
         if (SharedObjects.hasPermission()) {
             // Clean up persistent capture
@@ -243,6 +320,13 @@ public class DisplayCaptureAccessibilityService extends AccessibilityService {
                     // Apply the updated config
                     setServiceInfo(info);
                 }
+            }
+
+            // Update notification visibility based on permission status
+            if (!SharedObjects.hasPermission()) {
+                showRecordingNotification();
+            } else {
+                hideRecordingNotification();
             }
 
         } catch (JSONException e) {

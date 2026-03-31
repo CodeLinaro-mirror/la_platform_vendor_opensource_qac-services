@@ -7,7 +7,7 @@ package com.qualcomm.qaior.screen_understanding.sample_app;
 
 import android.os.RemoteException;
 import android.util.Log;
-import com.qualcomm.qaior.screen_understanding.IScreenUnderstandingService;
+import vendor.qti.qaior.screen_understanding.IScreenUnderstandingService;
 import java.util.List;
 import java.util.UUID;
 import org.json.JSONObject;
