@@ -1,17 +1,17 @@
 {
     "startConfig": {
-        "width": 1920,
-        "height": 1080,
+        "width": 1440,
+        "height": 3200,
         "format": 1,
         "framerate": 30,
         "activeUserId": 0,
         "appList": [
             {
-                "packageName": "com.example.sampleapp1",
+                "packageName": "com.android.settings",
                 "isSensitive": false
             },
             {
-                "packageName": "com.example.sampleapp2",
+                "packageName": "com.whatsapp",
                 "isSensitive": true
             }
         ],
@@ -28,7 +28,7 @@
         "enabled": false,
         "appList": [
             {
-                "packageName": "com.example.sampleapp1",
+                "packageName": "com.whatsapp",
                 "isSensitive": true
             }
         ]
