@@ -21,7 +21,7 @@ android_app {
         "androidx.core_core",
         "androidx.activity_activity",
         "vendor.qti.screen_understanding.display_capture-V1-java",
-        "vendor.qti.trigger-display-capture-aidl-java",
+        "vendor.qti.qaior.screen_understanding-V1-java",
     ],
 
     platform_apis: true,

@@ -10,7 +10,7 @@ android_app {
     asset_dirs: ["assets"],
 
     static_libs: [
-        "vendor.qti.trigger-display-capture-aidl-java",
+        "vendor.qti.qaior.screen_understanding-V1-java",
         "vendor.qti.screen_understanding.display_capture-V1-java",
         "androidx.appcompat_appcompat",
         "androidx.core_core",

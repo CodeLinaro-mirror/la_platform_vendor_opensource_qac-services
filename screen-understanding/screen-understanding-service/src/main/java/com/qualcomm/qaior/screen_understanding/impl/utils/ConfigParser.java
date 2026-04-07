@@ -267,6 +267,170 @@ public class ConfigParser {
         }
     }
 
+    // 
+
+    /**
+     * Parse CaptureConfig to JSON.
+     *
+     * @param config capture configuration.
+     * @return JSON string, or null if parsing fails.
+     */
+    public static String parseCaptureConfig(vendor.qti.qaior.screen_understanding.CaptureConfig config) {
+        if (config == null) {
+            Log.w(LOG_TAG, "Invalid CaptureConfig");
+            return null;
+        }
+
+        try {
+            JSONObject json = new JSONObject();
+
+            json.put("width", config.width);
+            json.put("height", config.height);
+            json.put("format", (int) config.format);
+            json.put("framerate", config.framerate);
+            json.put("userId", config.userId);
+
+            if (config.appList != null && config.appList.length > 0) {
+                JSONArray appListArray = new JSONArray();
+                for (vendor.qti.qaior.screen_understanding.AppInfo appInfo : config.appList) {
+                    JSONObject appObj = new JSONObject();
+                    appObj.put("packageName", appInfo.packageName);
+                    appObj.put("isSensitive", appInfo.isSensitive);
+                    appListArray.put(appObj);
+                }
+                json.put("appList", appListArray);
+            }
+
+            // Parse optional smart selection config
+            if (config.smartConfig != null) {
+                json.put("smartConfig", parseSmartSelectionConfigJson(config.smartConfig));
+            }
+
+            return json.toString();
+        } catch (JSONException e) {
+            Log.e(LOG_TAG, "Failed to parse config JSON", e);
+            return null;
+        }
+    }
+
+    /**
+     * Parse JSON from SmartSelectionConfig.
+     */
+    private static JSONObject parseSmartSelectionConfigJson(vendor.qti.qaior.screen_understanding.SmartSelectionConfig config)
+        throws JSONException {
+        JSONObject json = new JSONObject();
+
+        json.put("enableSmartSelection", config.enableSmartSelection);
+        json.put("keypointThreshold", config.keypointThreshold);
+        json.put("maxDetections", config.maxDetections);
+        json.put("inputWidth", config.inputWidth);
+        json.put("inputHeight", config.inputHeight);
+        
+        // Convert PixelFormat enum to integer
+        json.put("inputFormat", (int) config.inputFormat);
+
+        // Add per-app config if present
+        if (config.perAppConfig != null && config.perAppConfig.length > 0) {
+            JSONArray perAppArray = new JSONArray();
+            for (vendor.qti.qaior.screen_understanding.AppSmartSelectionConfig appConfig : config.perAppConfig) {
+                perAppArray.put(parseAppSmartSelectionConfigJson(appConfig));
+            }
+            json.put("perAppConfig", perAppArray);
+        }
+
+        return json;
+    }
+
+    /**
+     * Parse JSON from AppSmartSelectionConfig.
+     */
+    private static JSONObject parseAppSmartSelectionConfigJson(vendor.qti.qaior.screen_understanding.AppSmartSelectionConfig config)
+        throws JSONException {
+        JSONObject json = new JSONObject();
+
+        json.put("appName", config.appName);
+        json.put("enabled", config.enabled);
+        json.put("selector", parseSelectorConfigJson(config.selector));
+        json.put("extractor", parseExtractorConfigJson(config.extractor));
+        json.put("matcher", parseMatcherConfigJson(config.matcher));
+
+        return json;
+    }
+
+    /**
+     * Parse JSON from SelectorConfig.
+     */
+    private static JSONObject parseSelectorConfigJson(vendor.qti.qaior.screen_understanding.SelectorConfig config) throws JSONException {
+        JSONObject json = new JSONObject();       
+
+        json.put("acceptThreshold", config.acceptThreshold);
+        json.put("removeThreshold", config.removeThreshold);
+        json.put("maxSize", config.maxSize);
+
+        return json;
+    }
+
+    /**
+     * Parse JSON from ExtractorConfig.
+     */
+    private static JSONObject parseExtractorConfigJson(vendor.qti.qaior.screen_understanding.ExtractorConfig config) throws JSONException {
+        JSONObject json = new JSONObject();
+
+        json.put("topK", config.topK);
+        json.put("height", config.height);
+        json.put("detectionThreshold", config.detectionThreshold);
+        json.put("isPath", config.isPath);
+        
+        return json;
+    }
+
+    /**
+     * Parse JSON from MatcherConfig.
+     */
+    private static JSONObject parseMatcherConfigJson(vendor.qti.qaior.screen_understanding.MatcherConfig config) throws JSONException {
+        JSONObject json = new JSONObject();
+
+        json.put("minCossim", config.minCossim);
+        
+        return json;
+    }
+
+    /**
+     * Parse JSON from delete configuration.
+     *
+     * @param deleteConfig deletion configuration.
+     * @return JSON string, or null if parsing fails.
+     */
+    public static String parseDeleteConfig(vendor.qti.qaior.screen_understanding.DeleteConfig deleteConfig) {
+        if (deleteConfig == null) {
+            Log.w(LOG_TAG, "Empty delete config");
+            return null;
+        }
+
+        try {
+            JSONObject json = new JSONObject();
+
+            json.put("deleteAllCaptures", deleteConfig.deleteAllCaptures);
+            json.put("deleteSensitiveAppCaptures", deleteConfig.deleteSensitiveAppCaptures);
+            
+
+            if (deleteConfig.appPackageNames !=  null && deleteConfig.appPackageNames.length > 0) {
+                JSONArray packageArray = new JSONArray();
+
+                for (String packageName : deleteConfig.appPackageNames) {
+                    packageArray.put(packageName);
+                }
+
+                json.put("appPackageNames", packageArray);
+            }
+
+            return json.toString();
+        } catch (JSONException e) {
+            Log.e(LOG_TAG, "Failed to parse delete config JSON", e);
+            return null;
+        }
+    }
+
     /**
      * Create CaptureParams from individual parameters.
      *
