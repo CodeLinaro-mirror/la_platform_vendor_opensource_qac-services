@@ -8,6 +8,10 @@ package com.qualcomm.qaior.screen_understanding.sample_app;
 import android.os.RemoteException;
 import android.util.Log;
 import vendor.qti.qaior.screen_understanding.IScreenUnderstandingService;
+import vendor.qti.qaior.screen_understanding.IScreenUnderstandingCallback;
+import vendor.qti.qaior.screen_understanding.CaptureConfig;
+import vendor.qti.qaior.screen_understanding.DeleteConfig;
+import vendor.qti.qaior.screen_understanding.Status;
 import java.util.List;
 import java.util.UUID;
 import org.json.JSONObject;
@@ -20,6 +24,44 @@ public class TestScenarioExecutor {
 
     private final IScreenUnderstandingService service;
     private final SampleConfig sampleConfig;
+    private String sId = null;
+    
+    private final IScreenUnderstandingCallback.Stub callback = new IScreenUnderstandingCallback.Stub() {
+        @Override
+        public void onStart(long sessionId) throws RemoteException {
+            sId = String.valueOf(sessionId);          
+            Log.i(TAG, "Callback: onStart - sessionId=" + sessionId);
+        }
+
+        @Override
+        public void onError(long sessionId, Status status) throws RemoteException {
+            String errorMsg = "Error in session " + sessionId + 
+                            ": " + status.code + 
+                            (status.message != null ? " - " + status.message : "");
+            Log.e(TAG, "Callback: onError - " + errorMsg);
+        }
+
+        @Override
+        public void onStopped(long sessionId) throws RemoteException {
+            sId = null;
+            Log.i(TAG, "Callback: onStopped - sessionId=" + sessionId);
+        }
+
+        @Override
+        public void onConfigUpdated(long sessionId) throws RemoteException {
+            Log.i(TAG, "Callback: onConfigUpdated - sessionId=" + sessionId);
+        }
+
+        @Override
+        public int getInterfaceVersion() {
+            return IScreenUnderstandingCallback.VERSION;
+        }
+
+        @Override
+        public String getInterfaceHash() {
+            return IScreenUnderstandingCallback.HASH;
+        }
+    };
 
     public TestScenarioExecutor(IScreenUnderstandingService service, SampleConfig sampleConfig) {
         this.service = service;
@@ -28,7 +70,6 @@ public class TestScenarioExecutor {
 
     public String run(TestScenario scenario) {
         StringBuilder sb = new StringBuilder();
-        String sessionId = null;
         sb.append("Running: ").append(scenario.getName()).append("\n");
         if (scenario.getDescription() != null && !scenario.getDescription().isEmpty()) {
             sb.append("Desc: ").append(scenario.getDescription()).append("\n");
@@ -39,22 +80,20 @@ public class TestScenarioExecutor {
             try {
                 switch (op.op.toLowerCase()) {
                     case "start":
-                        sessionId = doStart();
-                        sb.append(step(i, "start", "session=" + sessionId, true));
+                        boolean start = doStart();
+                        sb.append(step(i, "start", "session=" + sId, true));
                         break;
                     case "update":
-                        boolean upd = doUpdate(sessionId);
-                        sb.append(step(i, "update", "session=" + sessionId, upd));
+                        boolean upd = doUpdate(sId);
+                        sb.append(step(i, "update", "session=" + sId, upd));
                         break;
                     case "stop":
                         boolean st = doStop();
                         sb.append(step(i, "stop", "", st));
-                        sessionId = null;
                         break;
                     case "delete":
-                        boolean del = doDelete(sessionId);
-                        sb.append(step(i, "delete", "session=" + sessionId, del));
-                        sessionId = null;
+                        boolean del = doDelete(sId);
+                        sb.append(step(i, "delete", "session=" + sId, del));
                         break;
                     case "wait":
                         sleep(op.waitMs);
@@ -76,12 +115,16 @@ public class TestScenarioExecutor {
         return String.format("#%d %s %s [%s]%n", idx + 1, op, extra, success ? "OK" : "FAIL");
     }
 
-    private String doStart() throws Exception {
-        String sessionId = "scenario_" + UUID.randomUUID();
-        JSONObject cfg = cloneJson(sampleConfig.getStartConfig());
-        cfg.put("sessionId", sessionId);
-        service.startCapture(cfg.toString());
-        return sessionId;
+    private boolean doStart() throws Exception {
+        CaptureConfig cfg = sampleConfig.getStartConfig();
+        try{
+            service.startCapture(cfg, callback);
+            return true;
+        } catch (RemoteException e) {
+            Log.w(TAG, "startCapture failed", e);
+            return false;
+        }
+        
     }
 
     private boolean doUpdate(String sessionId) throws Exception {
@@ -89,10 +132,9 @@ public class TestScenarioExecutor {
             // intentionally exercise error path
             sessionId = "missing_session";
         }
-        JSONObject cfg = cloneJson(sampleConfig.getUpdateConfig());
-        cfg.put("sessionId", sessionId);
+        CaptureConfig cfg = sampleConfig.getUpdateConfig();
         try {
-            service.updateCaptureConfig(cfg.toString());
+            service.updateCaptureConfig(Long.parseLong(sessionId), cfg);
             return true;
         } catch (RemoteException e) {
             Log.w(TAG, "updateCaptureConfig failed", e);
@@ -102,7 +144,7 @@ public class TestScenarioExecutor {
 
     private boolean doStop() {
         try {
-            service.stopCapture();
+            service.stopCapture(Long.parseLong(sId));
             return true;
         } catch (RemoteException e) {
             Log.w(TAG, "stopCapture failed", e);
@@ -114,10 +156,9 @@ public class TestScenarioExecutor {
         if (sessionId == null) {
             sessionId = "missing_session";
         }
-        JSONObject cfg = cloneJson(sampleConfig.getDeleteConfig());
-        cfg.put("sessionId", sessionId);
+        DeleteConfig cfg = sampleConfig.getDeleteConfig();
         try {
-            service.deleteCapture(cfg.toString());
+            service.deleteCapture(Long.parseLong(sessionId), cfg);
             return true;
         } catch (RemoteException e) {
             Log.w(TAG, "deleteCapture failed", e);
@@ -134,9 +175,5 @@ public class TestScenarioExecutor {
         } catch (InterruptedException ignored) {
             Thread.currentThread().interrupt();
         }
-    }
-
-    private JSONObject cloneJson(JSONObject src) throws Exception {
-        return new JSONObject(src.toString());
     }
 }

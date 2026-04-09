@@ -32,6 +32,11 @@ import com.qualcomm.qaior.screen_understanding.sample_app.SampleConfig;
 import com.qualcomm.qaior.screen_understanding.sample_app.TestScenario;
 import com.qualcomm.qaior.screen_understanding.sample_app.TestScenarioExecutor;
 import com.qualcomm.qaior.screen_understanding.sample_app.TestScenarioLoader;
+import vendor.qti.qaior.screen_understanding.CaptureConfig;
+import vendor.qti.qaior.screen_understanding.DeleteConfig;
+import vendor.qti.qaior.screen_understanding.IScreenUnderstandingCallback;
+import vendor.qti.qaior.screen_understanding.Status;
+import vendor.qti.qaior.screen_understanding.ErrorCode;
 import java.util.List;
 import org.json.JSONObject;
 
@@ -101,6 +106,58 @@ public class ScreenUnderstandingSampleActivity extends AppCompatActivity {
                 }
             }
         };
+
+    // callback implementation
+    private final IScreenUnderstandingCallback.Stub callback = new IScreenUnderstandingCallback.Stub() {
+        @Override
+        public void onStart(long sessionId) throws RemoteException {
+            runOnUiThread(() -> {
+                currentSessionId = String.valueOf(sessionId);
+                statusText.setText("Capture started - Session ID: " + sessionId);
+                updateUI();
+            });
+            Log.i(TAG, "Callback: onStart - sessionId=" + sessionId);
+        }
+
+        @Override
+        public void onError(long sessionId, Status status) throws RemoteException {
+            runOnUiThread(() -> {
+                String errorMsg = "Error in session " + sessionId + 
+                                ": " + status.code + 
+                                (status.message != null ? " - " + status.message : "");
+                statusText.setText(errorMsg);
+                Log.e(TAG, "Callback: onError - " + errorMsg);
+            });
+        }
+
+        @Override
+        public void onStopped(long sessionId) throws RemoteException {
+            runOnUiThread(() -> {
+                currentSessionId = null;
+                statusText.setText("Capture stopped - Session ID: " + sessionId);
+                updateUI();
+            });
+            Log.i(TAG, "Callback: onStopped - sessionId=" + sessionId);
+        }
+
+        @Override
+        public void onConfigUpdated(long sessionId) throws RemoteException {
+            runOnUiThread(() -> {
+                statusText.setText("Config updated - Session ID: " + sessionId);
+            });
+            Log.i(TAG, "Callback: onConfigUpdated - sessionId=" + sessionId);
+        }
+
+        @Override
+        public int getInterfaceVersion() {
+            return IScreenUnderstandingCallback.VERSION;
+        }
+
+        @Override
+        public String getInterfaceHash() {
+            return IScreenUnderstandingCallback.HASH;
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -243,16 +300,17 @@ public class ScreenUnderstandingSampleActivity extends AppCompatActivity {
         }
 
         try {
-            currentSessionId = "test_" + System.currentTimeMillis();
-            String config = createCaptureConfig(currentSessionId);
-            Log.i(TAG, "Calling startCapture with config: " + config);
+            CaptureConfig config = sampleConfig.getStartConfig();
+            if(config == null){
+                Log.e(TAG, "Error parsing CaptureConfig." + sampleConfig.getStartConfigJson().toString());
+                statusText.setText("startCapture failed. Invalid config");
+                return;
+            }
+
+            Log.i(TAG, "Calling startCapture with config: " + sampleConfig.getStartConfigJson().toString());
             long startCaptureKPI = SystemClock.elapsedRealtime();
             Log.v(TAG, "Start Capture Invoked at Timestamp: " + startCaptureKPI);
-            service.startCapture(config);
-            statusText.setText("startCapture called with session: " + currentSessionId);
-        } catch (RemoteException e) {
-            Log.e(TAG, "Error calling startCapture", e);
-            statusText.setText("Error: " + e.getMessage());
+            service.startCapture(config, callback);
         } catch (Exception e) {
             Log.e(TAG, "Error creating config", e);
             statusText.setText("Error creating config: " + e.getMessage());
@@ -265,12 +323,16 @@ public class ScreenUnderstandingSampleActivity extends AppCompatActivity {
             return;
         }
 
+        if (currentSessionId == null) {
+            statusText.setText("Error: No active session. Start capture first.");
+            return;
+        }
+
         try {
             Log.i(TAG, "Calling stopCapture");
-            service.stopCapture();
+            service.stopCapture(Long.parseLong(currentSessionId));
             statusText.setText("stopCapture called");
-            currentSessionId = null;
-        } catch (RemoteException e) {
+        } catch (Exception e) {
             Log.e(TAG, "Error calling stopCapture", e);
             statusText.setText("Error: " + e.getMessage());
         }
@@ -288,13 +350,16 @@ public class ScreenUnderstandingSampleActivity extends AppCompatActivity {
         }
 
         try {
-            String config = createUpdateConfig(currentSessionId);
-            Log.i(TAG, "Calling updateCaptureConfig with config: " + config);
-            service.updateCaptureConfig(config);
+            CaptureConfig config = sampleConfig.getUpdateConfig();
+            if(config == null){
+                Log.e(TAG, "Error parsing CaptureConfig." + sampleConfig.getUpdateConfigJson().toString());
+                statusText.setText("updateConfig failed. Invalid config");
+                return;
+            }
+
+            Log.i(TAG, "Calling updateCaptureConfig with config: " + sampleConfig.getUpdateConfigJson().toString());
+            service.updateCaptureConfig(Long.parseLong(currentSessionId), config);
             statusText.setText("updateCaptureConfig called");
-        } catch (RemoteException e) {
-            Log.e(TAG, "Error calling updateCaptureConfig", e);
-            statusText.setText("Error: " + e.getMessage());
         } catch (Exception e) {
             Log.e(TAG, "Error creating config", e);
             statusText.setText("Error creating config: " + e.getMessage());
@@ -313,11 +378,16 @@ public class ScreenUnderstandingSampleActivity extends AppCompatActivity {
         }
 
         try {
-            String deleteConfig = createDeleteConfig(currentSessionId);
-            Log.i(TAG, "Calling deleteCapture with config: " + deleteConfig);
-            service.deleteCapture(deleteConfig);
+            DeleteConfig deleteConfig = sampleConfig.getDeleteConfig();
+            if(deleteConfig == null){
+                Log.e(TAG, "Error parsing CaptureConfig." + sampleConfig.getDeleteConfigJson().toString());
+                statusText.setText("updateConfig failed. Invalid config");
+                return;
+            }
+
+            Log.i(TAG, "Calling deleteCapture with config: " + sampleConfig.getDeleteConfigJson().toString());
+            service.deleteCapture(Long.parseLong(currentSessionId), deleteConfig);
             statusText.setText("deleteCapture called");
-            currentSessionId = null;
         } catch (RemoteException e) {
             Log.e(TAG, "Error calling deleteCapture", e);
             statusText.setText("Error: " + e.getMessage());
@@ -325,37 +395,6 @@ public class ScreenUnderstandingSampleActivity extends AppCompatActivity {
             Log.e(TAG, "Error creating config", e);
             statusText.setText("Error creating config: " + e.getMessage());
         }
-    }
-
-    /**
-     * Create a complete capture configuration JSON with all required parameters.
-     */
-    private String createCaptureConfig(String sessionId) throws Exception {
-        JSONObject config = cloneJson(sampleConfig.getStartConfig());
-        config.put("sessionId", sessionId);
-        return config.toString();
-    }
-
-    /**
-     * Create an update configuration JSON.
-     */
-    private String createUpdateConfig(String sessionId) throws Exception {
-        JSONObject config = cloneJson(sampleConfig.getUpdateConfig());
-        config.put("sessionId", sessionId);
-        return config.toString();
-    }
-
-    /**
-     * Create a delete configuration JSON.
-     */
-    private String createDeleteConfig(String sessionId) throws Exception {
-        JSONObject config = cloneJson(sampleConfig.getDeleteConfig());
-        config.put("sessionId", sessionId);
-        return config.toString();
-    }
-
-    private JSONObject cloneJson(JSONObject src) throws Exception {
-        return new JSONObject(src.toString());
     }
 
     // ==== Scenario support ====
@@ -433,10 +472,10 @@ public class ScreenUnderstandingSampleActivity extends AppCompatActivity {
     private void updateUI() {
         btnBind.setEnabled(!isBound);
         btnBindData.setEnabled(!isDataServiceBound);
-        btnStartCapture.setEnabled(isBound);
-        btnStopCapture.setEnabled(isBound);
-        btnUpdateConfig.setEnabled(isBound);
-        btnDeleteCapture.setEnabled(isBound);
+        btnStartCapture.setEnabled(isBound && (currentSessionId == null));
+        btnStopCapture.setEnabled(isBound && (currentSessionId != null));
+        btnUpdateConfig.setEnabled(isBound && (currentSessionId != null));
+        btnDeleteCapture.setEnabled(isBound && (currentSessionId != null));
         btnRunScenario.setEnabled(isBound);
     }
 

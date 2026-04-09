@@ -28,6 +28,11 @@ import android.util.Log;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.ServiceCompat;
 import vendor.qti.qaior.screen_understanding.IScreenUnderstandingService;
+import vendor.qti.qaior.screen_understanding.CaptureConfig;
+import vendor.qti.qaior.screen_understanding.DeleteConfig;
+import vendor.qti.qaior.screen_understanding.IScreenUnderstandingCallback;
+import vendor.qti.qaior.screen_understanding.Status;
+import vendor.qti.qaior.screen_understanding.ErrorCode;
 import com.qualcomm.qaior.screen_understanding.R;
 import com.qualcomm.qaior.screen_understanding.impl.MainActivity;
 import com.qualcomm.qaior.screen_understanding.impl.accessibility.DisplayCaptureAccessibilityService;
@@ -48,8 +53,9 @@ public class ScreenUnderstandingService extends Service implements NativeBridge.
     private boolean isForeground = false;
     private long currentSessionId = -1;
 
+    IScreenUnderstandingCallback mSampleAppCallback = null;
+
     private int currentForegroundServiceType = ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE;
-    // private final Object permissionLock = new Object();
     private BroadcastReceiver permissionResultReceiver;
 
     // TODO: Handling concurrency with below variables
@@ -61,38 +67,139 @@ public class ScreenUnderstandingService extends Service implements NativeBridge.
     private final IScreenUnderstandingService.Stub mBinderAidl =
         new IScreenUnderstandingService.Stub() {
             @Override
-            public void startCapture(String config) throws RemoteException {
-                Log.i(tag, "startCapture called with config: " + config);
+            public void startCapture(CaptureConfig config, IScreenUnderstandingCallback callback) throws RemoteException {
+                if(callback == null){
+                    Log.e(tag, "Invalid IScreenUnderstandingCallback");
+                    return;
+                }
+                mSampleAppCallback = callback;
+
+                String configJsonStr = ConfigParser.parseCaptureConfig(config);
+                if(configJsonStr == null){
+                    Log.e(tag, "Invalid CaptureConfig");
+                    if (mSampleAppCallback != null) {
+                        try {
+                            Status status = new Status();
+                            status.code = ErrorCode.INVALID_CONFIG;
+                            status.message = "Failed to parse CaptureConfig";
+                            mSampleAppCallback.onError(-1, status);
+                        } catch (RemoteException e) {
+                            Log.e(tag, "Failed to call onError callback", e);
+                        }
+                    }
+                    return;
+                }
+
+                Log.i(tag, "startCapture called with config: " + configJsonStr);
                 waitingCommand = Commands.CMD_START_SESSION;
-                waitingConfig = config;
+                waitingConfig = configJsonStr;
 
                 NativeBridge bridge = ensureServiceConnected();
                 if (bridge != null) {
                     // Create session with native service
-                    long output = bridge.createSession(config);
+                    long output = bridge.createSession(configJsonStr);
                     Log.i(tag, "createSession() : " + output);
+
+                    if(output == -1){
+                        if (mSampleAppCallback != null) {
+                            try {
+                                Status status = new Status();
+                                status.code = ErrorCode.INTERNAL_ERROR;
+                                status.message = "Display capture service not found";
+                                mSampleAppCallback.onError(-1, status);
+                            } catch (RemoteException e) {
+                                Log.e(tag, "Failed to call onError callback", e);
+                            }
+                        }
+                    }
                 } else {
                     Log.e(tag, "NativeBridge not connected");
+                    if (mSampleAppCallback != null) {
+                        try {
+                            Status status = new Status();
+                            status.code = ErrorCode.INTERNAL_ERROR;
+                            status.message = "Display capture service not found";
+                            mSampleAppCallback.onError(-1, status);
+                        } catch (RemoteException e) {
+                            Log.e(tag, "Failed to call onError callback", e);
+                        }
+                    }
                 }
             }
 
             @Override
-            public void updateCaptureConfig(String config) throws RemoteException {
-                Log.i(tag, "updateCaptureConfig called with config: " + config);
+            public void updateCaptureConfig(long sessionId, CaptureConfig config) throws RemoteException {
+                if(sessionId != currentSessionId){
+                    Log.e(tag, "Invalid sessionId " + sessionId);
+                    if (mSampleAppCallback != null) {
+                        try {
+                            Status status = new Status();
+                            status.code = ErrorCode.INVALID_SESSION;
+                            status.message = "Session ID mismatch";
+                            mSampleAppCallback.onError(currentSessionId, status);
+                        } catch (RemoteException e) {
+                            Log.e(tag, "Failed to call onError callback", e);
+                        }
+                    }
+                    return;
+                }
+
+                String configJsonStr = ConfigParser.parseCaptureConfig(config);
+                if(configJsonStr == null){
+                    Log.e(tag, "Invalid CaptureConfig");
+                    if (mSampleAppCallback != null) {
+                        try {
+                            Status status = new Status();
+                            status.code = ErrorCode.INVALID_CONFIG;
+                            status.message = "Failed to parse CaptureConfig";
+                            mSampleAppCallback.onError(sessionId, status);
+                        } catch (RemoteException e) {
+                            Log.e(tag, "Failed to call onError callback", e);
+                        }
+                    }
+                    return;
+                }
+
+                Log.i(tag, "updateCaptureConfig called with config: " + configJsonStr);
                 waitingCommand = Commands.CMD_UPDATE_SESSION;
-                waitingConfig = config;
+                waitingConfig = configJsonStr;
 
                 NativeBridge bridge = ensureServiceConnected();
                 if (bridge != null) {
                     // Update config for active session with native service
-                    bridge.updateConfig(currentSessionId, config);
+                    bridge.updateConfig(currentSessionId, configJsonStr);
                 } else {
                     Log.e(tag, "NativeBridge not connected");
+                    if (mSampleAppCallback != null) {
+                        try {
+                            Status status = new Status();
+                            status.code = ErrorCode.INTERNAL_ERROR;
+                            status.message = "Display capture service not found";
+                            mSampleAppCallback.onError(-1, status);
+                        } catch (RemoteException e) {
+                            Log.e(tag, "Failed to call onError callback", e);
+                        }
+                    }
                 }
             }
 
             @Override
-            public void stopCapture() throws RemoteException {
+            public void stopCapture(long sessionId) throws RemoteException {
+                if(sessionId != currentSessionId){
+                    Log.e(tag, "Invalid sessionId " + sessionId);
+                    if (mSampleAppCallback != null) {
+                        try {
+                            Status status = new Status();
+                            status.code = ErrorCode.INVALID_SESSION;
+                            status.message = "Session ID mismatch";
+                            mSampleAppCallback.onError(currentSessionId, status);
+                        } catch (RemoteException e) {
+                            Log.e(tag, "Failed to call onError callback", e);
+                        }
+                    }
+                    return;
+                }
+
                 Log.i(tag, "stopCapture called");
                 waitingCommand = Commands.CMD_STOP_SESSION;
 
@@ -102,20 +209,81 @@ public class ScreenUnderstandingService extends Service implements NativeBridge.
                     bridge.destroySession(currentSessionId);
                 } else {
                     Log.e(tag, "NativeBridge not connected");
+                    if (mSampleAppCallback != null) {
+                        try {
+                            Status status = new Status();
+                            status.code = ErrorCode.INTERNAL_ERROR;
+                            status.message = "Display capture service not found";
+                            mSampleAppCallback.onError(-1, status);
+                        } catch (RemoteException e) {
+                            Log.e(tag, "Failed to call onError callback", e);
+                        }
+                    }
                 }
             }
 
             @Override
-            public void deleteCapture(String deleteConfig) throws RemoteException {
-                Log.i(tag, "deleteCapture called with config: " + deleteConfig);
+            public void deleteCapture(long sessionId, DeleteConfig deleteConfig) throws RemoteException {
+                if(sessionId != currentSessionId){
+                    Log.e(tag, "Invalid sessionId " + sessionId);
+                    if (mSampleAppCallback != null) {
+                        try {
+                            Status status = new Status();
+                            status.code = ErrorCode.INVALID_SESSION;
+                            status.message = "Session ID mismatch";
+                            mSampleAppCallback.onError(currentSessionId, status);
+                        } catch (RemoteException e) {
+                            Log.e(tag, "Failed to call onError callback", e);
+                        }
+                    }
+                    return;
+                }
+
+                String configJsonStr = ConfigParser.parseDeleteConfig(deleteConfig);
+                if(configJsonStr == null){
+                    Log.e(tag, "Invalid CaptureConfig");
+                    if (mSampleAppCallback != null) {
+                        try {
+                            Status status = new Status();
+                            status.code = ErrorCode.INVALID_CONFIG;
+                            status.message = "Failed to parse CaptureConfig";
+                            mSampleAppCallback.onError(sessionId, status);
+                        } catch (RemoteException e) {
+                            Log.e(tag, "Failed to call onError callback", e);
+                        }
+                    }
+                    return;
+                }
+
+                Log.i(tag, "deleteCapture called with config: " + configJsonStr);
 
                 NativeBridge bridge = ensureServiceConnected();
                 if (bridge != null) {
                     // Update config for active session with native service
-                    bridge.deleteCapture(currentSessionId, deleteConfig);
+                    bridge.deleteCapture(currentSessionId, configJsonStr);
                 } else {
                     Log.e(tag, "NativeBridge not connected");
+                    if (mSampleAppCallback != null) {
+                        try {
+                            Status status = new Status();
+                            status.code = ErrorCode.INTERNAL_ERROR;
+                            status.message = "Display capture service not found";
+                            mSampleAppCallback.onError(-1, status);
+                        } catch (RemoteException e) {
+                            Log.e(tag, "Failed to call onError callback", e);
+                        }
+                    }
                 }
+            }
+
+            @Override
+            public int getInterfaceVersion() {
+                return IScreenUnderstandingService.VERSION;
+            }
+
+            @Override
+            public String getInterfaceHash() {
+                return IScreenUnderstandingService.HASH;
             }
         };
 
@@ -510,6 +678,15 @@ public class ScreenUnderstandingService extends Service implements NativeBridge.
             "onReady Callback from NativeBridge: SessionId: " + sessionId + " ready: " + enabled);
         currentSessionId = sessionId;
 
+        // Notify sample app
+        if (mSampleAppCallback != null) {
+            try {
+                mSampleAppCallback.onStart(sessionId);
+            } catch (RemoteException e) {
+                Log.e(tag, "Failed to call onStart callback", e);
+            }
+        }
+
         // send to DisplayCaptureAccessibilityService
         if (waitingConfig != null) {
             // if display HAL available
@@ -541,6 +718,16 @@ public class ScreenUnderstandingService extends Service implements NativeBridge.
     @Override
     public void onControlSessionStopped(long sessionId) {
         Log.i(tag, "onStopped Callback from NativeBridge: SessionId: " + sessionId);
+
+        // Notify sample app
+        if (mSampleAppCallback != null) {
+            try {
+                mSampleAppCallback.onStopped(sessionId);
+            } catch (RemoteException e) {
+                Log.e(tag, "Failed to call onStopped callback", e);
+            }
+        }
+
         currentSessionId = -1;
 
         // send to DisplayCaptureAccessibilityService
@@ -555,6 +742,15 @@ public class ScreenUnderstandingService extends Service implements NativeBridge.
     @Override
     public void onControlSessionConfigUpdated(long sessionId) {
         Log.i(tag, "onConfigUpdated Callback from NativeBridge: SessionId: " + sessionId);
+
+        // Notify sample app
+        if (mSampleAppCallback != null) {
+            try {
+                mSampleAppCallback.onConfigUpdated(sessionId);
+            } catch (RemoteException e) {
+                Log.e(tag, "Failed to call onConfigUpdated callback", e);
+            }
+        }
 
         // send to DisplayCaptureAccessibilityService
         if (waitingConfig != null) {
