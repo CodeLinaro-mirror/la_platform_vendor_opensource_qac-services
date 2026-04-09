@@ -4,4 +4,4 @@ QAC_SU := screenunderstanding
 QAC_SU += QaiorScreenUnderstandingService
 
 # Add Screen Understanding to product packages
-#PRODUCT_PACKAGES += $(QAC_SU)
+PRODUCT_PACKAGES += $(QAC_SU)
