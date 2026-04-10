@@ -1,0 +1,35 @@
+prebuilt_etc {
+    name: "privapp-permissions-screen_understanding.xml",
+    src: "privapp-permissions-screen_understanding.xml",
+    sub_dir: "permissions",
+    system_ext_specific: true,
+    filename_from_src: true,
+}
+
+android_app {
+    name: "QaiorScreenUnderstandingService",
+
+    srcs: [
+        "java/**/*.java",
+    ],
+
+    manifest: "AndroidManifest.xml",
+    resource_dirs: ["res"],
+
+    static_libs: [
+        "androidx.appcompat_appcompat",
+        "androidx.core_core",
+        "androidx.activity_activity",
+        "vendor.qti.screen_understanding.display_capture-V1-java",
+        "vendor.qti.qaior.screen_understanding-V1-java",
+    ],
+
+    platform_apis: true,
+    certificate: "platform",
+    system_ext_specific: true,
+    privileged: true,
+
+    optimize: {
+        enabled: false,
+    },
+}

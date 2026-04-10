@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.qualcomm.qaior.screen_understanding">
+
+    <!-- Signature-level permission to protect AIDL interface -->
+    <permission
+        android:name="com.qualcomm.qaior.permission.SCREEN_CAPTURE"
+        android:protectionLevel="signature" />
+
+    <uses-permission android:name="com.qualcomm.qaior.permission.SCREEN_CAPTURE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.BIND_ACCESSIBILITY_SERVICE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application
+        android:allowBackup="false"
+        android:label="ScreenUnderstanding"
+        android:theme="@style/Theme.AppCompat.Light.NoActionBar">
+
+        <!-- Boot receiver to start foreground service -->
+        <receiver
+            android:name=".impl.utils.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- PermissionReceiver for Media Projection Permission-->
+        <receiver
+            android:name=".impl.utils.PermissionReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.qualcomm.qaior.screen_understanding.PERMISSION_GRANTED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Foreground orchestrator service -->
+        <service
+            android:name=".impl.service.ScreenUnderstandingService"
+            android:exported="true"
+            android:foregroundServiceType="specialUse|mediaProjection"
+            android:permission="com.qualcomm.qaior.permission.SCREEN_CAPTURE">
+            <intent-filter>
+                <action android:name="com.qualcomm.qaior.screen_understanding.ACTION_START" />
+                <action android:name="vendor.qti.qaior.screen_understanding.IScreenUnderstandingService" />
+            </intent-filter>
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Screen capture and understanding operations" />
+        </service>
+
+        <!-- Accessibility service -->
+        <service
+            android:name=".impl.accessibility.DisplayCaptureAccessibilityService"
+            android:exported="true"
+            android:label="DisplayCapture Accessibility Service"
+            android:icon="@drawable/qaior_small"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+
+        <!-- MediaProjection permission entry -->
+        <activity
+            android:name=".impl.MainActivity"
+            android:exported="true"
+            android:taskAffinity="com.qualcomm.qaior.screen_understanding.permission">
+            <intent-filter>
+                <action android:name="com.qualcomm.qaior.screen_understanding.REQUEST_MEDIA_PROJECTION" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+    </application>
+</manifest>

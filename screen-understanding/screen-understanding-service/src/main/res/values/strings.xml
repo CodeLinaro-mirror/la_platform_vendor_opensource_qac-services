@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+SPDX-License-Identifier: BSD-3-Clause-Clear
+-->
+<resources>
+    <string name="app_name">ScreenUnderstanding</string>
+    <string name="accessibility_service_description">Screen capture accessibility service</string>
+</resources>

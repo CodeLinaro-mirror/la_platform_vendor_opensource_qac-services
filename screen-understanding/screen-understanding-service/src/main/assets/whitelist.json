@@ -1,0 +1,14 @@
+{
+    "whitelist": [
+        {
+            "packageName": "com.whatsapp",
+            "signatureHash": "SHA256:PLACEHOLDER",
+            "description": "WhatsApp default entry"
+        },
+        {
+            "packageName": "com.amazon.mShop.android",
+            "signatureHash": "SHA256:PLACEHOLDER",
+            "description": "Amazon Shopping default entry"
+        }
+    ]
+}

@@ -1,0 +1,2 @@
+-keep class com.qualcomm.qaior.screen_understanding.** { *; }
+-keep class com.qualcomm.qaior.screen_understanding.sample_app.** { *; }
