@@ -9,6 +9,7 @@ import org.json.JSONObject;
 import org.json.JSONException;
 import org.json.JSONArray;
 import android.util.Log;
+import java.nio.charset.StandardCharsets;
 import vendor.qti.qaior.screen_understanding.AppInfo;
 import vendor.qti.qaior.screen_understanding.AppSmartSelectionConfig;
 import vendor.qti.qaior.screen_understanding.CaptureConfig;
@@ -103,6 +104,12 @@ public class SampleConfig {
             // Parse optional smart selection config
             if (json.has("smartConfig")) {
                 config.smartConfig = parseSmartSelectionConfig(json.getJSONObject("smartConfig"));
+            }
+
+            JSONObject smartConfigObj = json.optJSONObject("ss_config");
+            if (smartConfigObj != null) {
+                String jsonString = smartConfigObj.toString();
+                config.algoConfigBlob = jsonString.getBytes(StandardCharsets.UTF_8);
             }
 
             return config;
