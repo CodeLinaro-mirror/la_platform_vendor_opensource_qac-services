@@ -34,7 +34,6 @@ import vendor.qti.qaior.screen_understanding.IScreenUnderstandingCallback;
 import vendor.qti.qaior.screen_understanding.Status;
 import vendor.qti.qaior.screen_understanding.ErrorCode;
 import com.qualcomm.qaior.screen_understanding.R;
-import com.qualcomm.qaior.screen_understanding.impl.MainActivity;
 import com.qualcomm.qaior.screen_understanding.impl.accessibility.DisplayCaptureAccessibilityService;
 import com.qualcomm.qaior.screen_understanding.impl.bridge.NativeBridge;
 import com.qualcomm.qaior.screen_understanding.impl.utils.*;
@@ -44,7 +43,6 @@ import org.json.JSONObject;
 
 public class ScreenUnderstandingService extends Service implements NativeBridge.CallbackListener {
     private static final int FOREGROUND_NOTIFICATION_ID = 1001;
-    private static final int REQUEST_MEDIA_PROJECTION = 1002;
 
     private static final String CHANNEL_ID = "screen_understanding_boot";
     private static final int NOTIFICATION_ID = 1004;
@@ -54,9 +52,6 @@ public class ScreenUnderstandingService extends Service implements NativeBridge.
     private long currentSessionId = -1;
 
     IScreenUnderstandingCallback mSampleAppCallback = null;
-
-    private int currentForegroundServiceType = ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE;
-    private BroadcastReceiver permissionResultReceiver;
 
     // TODO: Handling concurrency with below variables
     private int waitingCommand = -1;
@@ -307,57 +302,10 @@ public class ScreenUnderstandingService extends Service implements NativeBridge.
 
         // initialize native bridge here
         NativeBridge bridge = ensureServiceConnected();
-
-        Log.i(tag, "Media Projection permission status:" + SharedObjects.hasPermission());
-
-        /* Permission broadcast receiver for subsequent start sessions */
-        permissionResultReceiver = new BroadcastReceiver() {
-            @Override
-            public void onReceive(Context context, Intent intent) {
-                Log.i(tag, "Service BroadcastReceiver.onReceive called");
-                Log.i(tag, "Action: " + (intent != null ? intent.getAction() : "null"));
-                Log.i(tag, "waitingCommand: " + waitingCommand);
-
-                if (PermissionReceiver.ACTION_PERMISSION_GRANTED.equals(intent.getAction())) {
-                    updateForegroundServiceType(
-                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
-
-                    NotificationManager nm = getSystemService(NotificationManager.class);
-                    if (nm != null) {
-                        nm.cancel(NOTIFICATION_ID);
-                        Log.i(tag, "Permission notification dismissed");
-                    }
-
-                    if (waitingCommand != -1) {
-                        Log.i(tag,
-                            "Permission granted, processing waiting command: " + waitingCommand);
-                        handleCommand(waitingCommand, waitingConfig);
-                        waitingCommand = -1;
-                        waitingConfig = null;
-                    } else {
-                        Log.i(tag, "No waiting command to process");
-                    }
-                }
-            }
-        };
-
-        IntentFilter filter = new IntentFilter(PermissionReceiver.ACTION_PERMISSION_GRANTED);
-        registerReceiver(permissionResultReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
-        /* Permission broadcast receiver end */
     }
 
     @Override
     public void onDestroy() {
-        // Unregister broadcast receiver
-        if (permissionResultReceiver != null) {
-            try {
-                unregisterReceiver(permissionResultReceiver);
-                permissionResultReceiver = null;
-            } catch (IllegalArgumentException e) {
-                Log.w(tag, "Receiver was not registered", e);
-            }
-        }
-
         NativeBridge bridge = SharedObjects.getNativeBridge();
         if (bridge != null) {
             if (currentSessionId > 0) {
@@ -524,49 +472,9 @@ public class ScreenUnderstandingService extends Service implements NativeBridge.
         Log.i(tag, "Started foreground service with type: " + serviceType);
     }
 
-    private void updateForegroundServiceType(int serviceType) {
-        if (!isForeground) {
-            Log.w(tag, "Service not in foreground, cannot update type");
-            return;
-        }
-
-        if (currentForegroundServiceType == serviceType) {
-            Log.d(tag, "Service type already set to: " + serviceType);
-            return;
-        }
-
-        Log.i(tag,
-            "Updating foreground service type from " + currentForegroundServiceType + " to "
-                + serviceType);
-
-        // Stop current foreground
-        stopForeground(false); // Keep notification
-
-        // Restart with new type
-        String channelId = "bound_foreground_channel";
-        Notification notif =
-            (new NotificationCompat.Builder(this, channelId))
-                .setContentTitle((CharSequence) "Screen Understanding Service")
-                .setContentText((CharSequence) "Screen Understanding Service running")
-                .setSmallIcon(R.drawable.qaior_small)
-                .setOngoing(true)
-                .setCategory(NotificationCompat.CATEGORY_SERVICE)
-                .setPriority(NotificationCompat.PRIORITY_HIGH)
-                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                .setAutoCancel(false)
-                .setShowWhen(true)
-                .setWhen(System.currentTimeMillis())
-                .build();
-
-        startForeground(FOREGROUND_NOTIFICATION_ID, notif, serviceType);
-        currentForegroundServiceType = serviceType;
-        Log.i(tag, "Foreground service type updated successfully");
-    }
-
     private final void stopForegroundService() {
         stopForeground(STOP_FOREGROUND_REMOVE);
         isForeground = false;
-        currentForegroundServiceType = ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE;
     }
 
     private void handleCommand(int command, String config) {
@@ -633,44 +541,6 @@ public class ScreenUnderstandingService extends Service implements NativeBridge.
         Log.i(tag, "Accessibility prompt notification shown");
     }
 
-    private void showPermissionNotification(Context context) {
-        createNotificationChannel(context);
-
-        Intent permissionIntent = new Intent(context, MainActivity.class);
-        permissionIntent.setAction(
-            "com.qualcomm.qaior.screen_understanding.REQUEST_MEDIA_PROJECTION");
-        permissionIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-
-        PendingIntent pendingIntent = PendingIntent.getActivity(context, 0, permissionIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-
-        Notification notification = new Notification.Builder(context, CHANNEL_ID)
-                                        .setContentTitle("Screen Understanding")
-                                        .setContentText("Tap to enable screen capture")
-                                        .setSmallIcon(android.R.drawable.ic_menu_camera)
-                                        .setContentIntent(pendingIntent)
-                                        .setAutoCancel(true)
-                                        .setOngoing(true)
-                                        .setPriority(Notification.PRIORITY_HIGH)
-                                        .build();
-
-        NotificationManager notificationManager =
-            context.getSystemService(NotificationManager.class);
-        notificationManager.notify(NOTIFICATION_ID, notification);
-
-        Log.i(tag, "Permission notification shown");
-    }
-
-    private void createNotificationChannel(Context context) {
-        NotificationChannel channel = new NotificationChannel(
-            CHANNEL_ID, "Screen Understanding Boot", NotificationManager.IMPORTANCE_HIGH);
-        channel.setDescription("Notifications for screen capture permission");
-
-        NotificationManager notificationManager =
-            context.getSystemService(NotificationManager.class);
-        notificationManager.createNotificationChannel(channel);
-    }
-
     // CallbackListener implementation
     @Override
     public void onControlSessionReady(long sessionId, boolean enabled) {
@@ -689,29 +559,9 @@ public class ScreenUnderstandingService extends Service implements NativeBridge.
 
         // send to DisplayCaptureAccessibilityService
         if (waitingConfig != null) {
-            // if display HAL available
-            if (enabled) {
-                handleCommand(waitingCommand, waitingConfig);
-                // Clear the waiting variables after processing
-                waitingCommand = -1;
-                waitingConfig = null;
-            } else {
-                // show notification to request Media Projection permisison
-                if (SharedObjects.hasPermission()) {
-                    // Permission already exists, upgrade and forward
-                    Log.i(tag, "MediaProjection permission already granted");
-                    updateForegroundServiceType(
-                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
-                    handleCommand(waitingCommand, waitingConfig);
-                    waitingCommand = -1;
-                    waitingConfig = null;
-                } else {
-                    // Need to request permission
-                    Log.i(tag, "MediaProjection permission not granted, showing notification");
-                    showPermissionNotification(this);
-                    // waitingCommand/waitingConfig will be processed after permission grant
-                }
-            }
+            handleCommand(waitingCommand, waitingConfig);
+            waitingCommand = -1;
+            waitingConfig = null;
         }
     }
 
