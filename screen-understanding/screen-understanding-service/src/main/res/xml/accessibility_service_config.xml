@@ -7,10 +7,10 @@ SPDX-License-Identifier: BSD-3-Clause-Clear
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:description="@string/accessibility_service_description"
     android:packageNames=""
-    android:accessibilityEventTypes="typeViewScrolled"
+    android:accessibilityEventTypes="typeViewScrolled|typeViewClicked|typeWindowStateChanged|typeWindowsChanged|typeViewTextChanged|typeViewTextSelectionChanged|typeViewFocused"
     android:accessibilityFeedbackType="feedbackGeneric"
     android:notificationTimeout="50"
     android:canRetrieveWindowContent="true"
-    android:accessibilityFlags="flagReportViewIds|flagRequestFilterKeyEvents"
+    android:accessibilityFlags="flagDefault|flagReportViewIds|flagRetrieveInteractiveWindows|flagIncludeNotImportantViews"
     android:settingsActivity=""
     />
