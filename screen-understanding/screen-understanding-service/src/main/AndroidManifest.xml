@@ -20,16 +20,6 @@
         android:label="ScreenUnderstanding"
         android:theme="@style/Theme.AppCompat.Light.NoActionBar">
 
-        <!-- Boot receiver to start foreground service -->
-        <receiver
-            android:name=".impl.utils.BootReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
-            </intent-filter>
-        </receiver>
-
         <!-- Foreground orchestrator service -->
         <service
             android:name=".impl.service.ScreenUnderstandingService"
