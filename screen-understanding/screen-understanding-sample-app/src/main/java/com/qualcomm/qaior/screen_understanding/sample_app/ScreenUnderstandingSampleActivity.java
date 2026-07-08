@@ -266,6 +266,13 @@ public class ScreenUnderstandingSampleActivity extends AppCompatActivity {
             // use default config (all)
             mDataClient = new CaptureDataClient(this);
             isDataServiceBound = true;
+            mDataClient.setDoScreenshotDump(switchDumpScreenshot.isChecked());
+            try {
+              mDataClient.setCompressionEnabled(switchDoCompression.isChecked());
+            } catch (Exception e) {
+              Log.e(TAG, "Failed to apply compression pref on bind", e);
+            }
+
             updateUI();
             statusText.setText("Data service bound");
         } else {
@@ -477,6 +484,8 @@ public class ScreenUnderstandingSampleActivity extends AppCompatActivity {
         btnUpdateConfig.setEnabled(isBound && (currentSessionId != null));
         btnDeleteCapture.setEnabled(isBound && (currentSessionId != null));
         btnRunScenario.setEnabled(isBound);
+        switchDumpScreenshot.setEnabled(isDataServiceBound);
+        switchDoCompression.setEnabled(isDataServiceBound);
     }
 
     @Override
