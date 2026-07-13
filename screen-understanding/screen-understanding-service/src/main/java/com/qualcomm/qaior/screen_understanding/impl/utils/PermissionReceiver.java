@@ -27,7 +27,7 @@ public class PermissionReceiver extends BroadcastReceiver {
         }
 
         if (ACTION_PERMISSION_GRANTED.equals(intent.getAction())) {
-            Log.i(TAG, "MediaProjection permission granted, starting service");
+            Log.i(TAG, "Permission granted, starting service");
 
             // Dismiss the boot notification
             dismissBootNotification(context);
