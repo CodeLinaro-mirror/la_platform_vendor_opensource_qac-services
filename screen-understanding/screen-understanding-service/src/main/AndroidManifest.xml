@@ -12,7 +12,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-    <!-- <uses-permission android:name="android.permission.BIND_ACCESSIBILITY_SERVICE" /> -->
+    <uses-permission android:name="android.permission.BIND_ACCESSIBILITY_SERVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
@@ -40,8 +40,8 @@
             android:name=".impl.accessibility.DisplayCaptureAccessibilityService"
             android:exported="true"
             android:label="DisplayCapture Accessibility Service"
-            android:icon="@drawable/qaior_small">
-            <!--android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"> -->
+            android:icon="@drawable/qaior_small"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
             </intent-filter>
