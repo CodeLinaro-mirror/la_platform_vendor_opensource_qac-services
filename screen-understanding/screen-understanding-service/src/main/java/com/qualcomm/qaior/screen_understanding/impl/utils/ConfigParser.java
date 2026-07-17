@@ -6,8 +6,13 @@
 package com.qualcomm.qaior.screen_understanding.impl.utils;
 
 import android.util.Log;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Arrays;
+import java.util.Set;
+import java.util.HashSet;
+import java.util.Iterator;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -28,6 +33,290 @@ import vendor.qti.screen_understanding.display_capture.SmartSelectionConfig;
  */
 public class ConfigParser {
     private static final String LOG_TAG = "ScreenUnderstanding.ConfigParser";
+
+    /**
+    * Validates ss_config objects against an embedded Schema.
+    */
+    private static class ConfigValidator {
+        /**
+         * Field specification - just name and whether it's required.
+         */
+        private static class FieldSpec {
+            final String name;
+            final boolean required;
+            final FieldType type;
+            final StructureSpec nestedSpec; // For objects
+            final StructureSpec arrayItemSpec; // For arrays
+
+            enum FieldType {
+                SIMPLE,  // Any simple value (string, number, boolean)
+                OBJECT,  // Nested object
+                ARRAY    // Array of objects
+            }
+
+            // Simple field (string, number, boolean, etc.)
+            FieldSpec(String name, boolean required) {
+                this.name = name;
+                this.required = required;
+                this.type = FieldType.SIMPLE;
+                this.nestedSpec = null;
+                this.arrayItemSpec = null;
+            }
+
+            // Nested object field
+            FieldSpec(String name, boolean required, StructureSpec nestedSpec) {
+                this.name = name;
+                this.required = required;
+                this.type = FieldType.OBJECT;
+                this.nestedSpec = nestedSpec;
+                this.arrayItemSpec = null;
+            }
+
+            // Array field
+            static FieldSpec array(String name, boolean required, StructureSpec arrayItemSpec) {
+                FieldSpec spec = new FieldSpec(name, required);
+                return new FieldSpec(name, required, FieldType.ARRAY, null, arrayItemSpec);
+            }
+
+            private FieldSpec(String name, boolean required, FieldType type,
+                            StructureSpec nestedSpec, StructureSpec arrayItemSpec) {
+                this.name = name;
+                this.required = required;
+                this.type = type;
+                this.nestedSpec = nestedSpec;
+                this.arrayItemSpec = arrayItemSpec;
+            }
+        }
+
+        /**
+         * Structure specification defining allowed fields.
+         */
+        private static class StructureSpec {
+            final List<FieldSpec> fields;
+
+            StructureSpec(FieldSpec... fields) {
+                this.fields = Arrays.asList(fields);
+            }
+        }
+
+        // Define the schema for ss_config
+        private static final StructureSpec SS_CONFIG_SCHEMA = createSsConfigSchema();
+
+        private static StructureSpec createSsConfigSchema() {
+            // Matcher spec
+            StructureSpec matcherSpec = new StructureSpec(
+                new FieldSpec("min_cossim", true),
+                new FieldSpec("mnn_matcher_n_max", true),
+                new FieldSpec("mnn_matcher_m_max", true),
+                new FieldSpec("mnn_matcher_d", true),
+                new FieldSpec("mnn_matcher_pretranspose_desc2", true),
+                new FieldSpec("use_spatial_pruning", true),
+                new FieldSpec("spatial_pruning_grid_size", true),
+                new FieldSpec("spatial_pruning_top_k_per_cell", true),
+                new FieldSpec("spatial_dist_tol", true),
+                new FieldSpec("min_cluster_size", true),
+                new FieldSpec("heatmap_cossim", true),
+                new FieldSpec("zero_translation_cossim", true)
+            );
+
+            // Extractor spec
+            StructureSpec extractorSpec = new StructureSpec(
+                new FieldSpec("top_k", true),
+                new FieldSpec("detection_threshold", true),
+                new FieldSpec("is_path", true),
+                new FieldSpec("use_fixed_size", true),
+                new FieldSpec("preproc_fixed_height", true),
+                new FieldSpec("preproc_fixed_width", true)
+            );
+
+            // Queue threshold config
+            StructureSpec queueThresholdSpec = new StructureSpec(
+                new FieldSpec("enabled", true),
+                new FieldSpec("notification_threshold", true),
+                new FieldSpec("hysteresis", true)
+            );
+
+            // Selector spec
+            StructureSpec selectorSpec = new StructureSpec(
+                new FieldSpec("accept_threshold", true),
+                new FieldSpec("remove_threshold", true),
+                new FieldSpec("max_size", true),
+                new FieldSpec("pruning_strategy", true),
+                new FieldSpec("queue_threshold_config", true, queueThresholdSpec)
+            );
+
+            // App config spec (array item)
+            StructureSpec appConfigSpec = new StructureSpec(
+                new FieldSpec("appName", true),
+                new FieldSpec("selector", true, selectorSpec),
+                new FieldSpec("extractor", true, extractorSpec),
+                new FieldSpec("matcher", true, matcherSpec)
+            );
+
+            // Device config spec
+            StructureSpec deviceConfigSpec = new StructureSpec(
+                new FieldSpec("device", true),
+                new FieldSpec("cpu_config_path", true),
+                new FieldSpec("npu_config_path", true)
+            );
+
+            // Root ss_config spec
+            return new StructureSpec(
+                new FieldSpec("activeuserId", true),
+                new FieldSpec("smartSelectionDeviceConfig", true, deviceConfigSpec),
+                FieldSpec.array("smartSelectionAppConfig", true, appConfigSpec)
+            );
+        }
+
+        /**
+         * Result of validation containing success status and error details.
+         */
+        static class ValidationResult {
+            private final boolean isValid;
+            private final List<String> errors;
+            private final String summary;
+
+            private ValidationResult(boolean isValid, List<String> errors) {
+                this.isValid = isValid;
+                this.errors = errors;
+                this.summary = buildSummary(errors);
+            }
+
+            static ValidationResult success() {
+                return new ValidationResult(true, new ArrayList<>());
+            }
+
+            static ValidationResult failure(List<String> errors) {
+                return new ValidationResult(false, errors);
+            }
+
+            boolean isValid() {
+                return isValid;
+            }
+
+            List<String> getErrors() {
+                return new ArrayList<>(errors);
+            }
+
+            String getSummary() {
+                return summary;
+            }
+
+            private String buildSummary(List<String> errors) {
+                if (errors.isEmpty()) {
+                    return "Validation successful";
+                }
+                StringBuilder sb = new StringBuilder();
+                sb.append(errors.size()).append(" validation error(s):\n");
+                for (int i = 0; i < errors.size(); i++) {
+                    sb.append("  ").append(i + 1).append(". ").append(errors.get(i));
+                    if (i < errors.size() - 1) {
+                        sb.append("\n");
+                    }
+                }
+                return sb.toString();
+            }
+        }
+
+        /**
+         * Validate ss_config object against the embedded schema.
+         *
+         * @param ssConfig The ss_config JSON object to validate
+         * @return ValidationResult containing validation status and errors
+         */
+        static ValidationResult validate(JSONObject ssConfig) {
+            if (ssConfig == null) {
+                return ValidationResult.failure(Arrays.asList("ss_config is null"));
+            }
+
+            List<String> errors = new ArrayList<>();
+            validateStructure(ssConfig, SS_CONFIG_SCHEMA, "", errors);
+
+            if (errors.isEmpty()) {
+                Log.d(LOG_TAG, "ss_config validation successful");
+                return ValidationResult.success();
+            } else {
+                Log.w(LOG_TAG, "ss_config validation failed: " + errors.size() + " error(s)");
+                return ValidationResult.failure(errors);
+            }
+        }
+
+        /**
+         * Recursively validate a JSON object against a structure spec.
+         */
+        private static void validateStructure(JSONObject obj, StructureSpec spec,
+                                            String path, List<String> errors) {
+            // Build set of allowed field names
+            Set<String> allowedFields = new HashSet<>();
+            for (FieldSpec field : spec.fields) {
+                allowedFields.add(field.name);
+            }
+
+            // Check for unknown fields
+            Iterator<String> keys = obj.keys();
+            while (keys.hasNext()) {
+                String key = keys.next();
+                if (!allowedFields.contains(key)) {
+                    errors.add(buildPath(path, key) + ": Unknown field");
+                }
+            }
+
+            // Validate each field in spec
+            for (FieldSpec field : spec.fields) {
+                String fieldPath = buildPath(path, field.name);
+
+                // Check if field exists
+                if (!obj.has(field.name) || obj.isNull(field.name)) {
+                    if (field.required) {
+                        errors.add(fieldPath + ": Missing required field");
+                    }
+                    continue;
+                }
+
+                // Validate based on type
+                switch (field.type) {
+                    case SIMPLE:
+                        // No type checking - just presence check (already done above)
+                        break;
+
+                    case OBJECT:
+                        JSONObject nestedObj = obj.optJSONObject(field.name);
+                        if (nestedObj == null) {
+                            errors.add(fieldPath + ": Must be an object");
+                        } else if (field.nestedSpec != null) {
+                            validateStructure(nestedObj, field.nestedSpec, fieldPath, errors);
+                        }
+                        break;
+
+                    case ARRAY:
+                        JSONArray array = obj.optJSONArray(field.name);
+                        if (array == null) {
+                            errors.add(fieldPath + ": Must be an array");
+                        } else {
+                            if (array.length() == 0) {
+                                errors.add(fieldPath + ": Array must not be empty");
+                            }
+                            if (field.arrayItemSpec != null) {
+                                for (int i = 0; i < array.length(); i++) {
+                                    JSONObject item = array.optJSONObject(i);
+                                    if (item == null) {
+                                        errors.add(fieldPath + "[" + i + "]: Array item must be an object");
+                                    } else {
+                                        validateStructure(item, field.arrayItemSpec,
+                                                        fieldPath + "[" + i + "]", errors);
+                                    }
+                                }
+                            }
+                        }
+                        break;
+                }
+            }
+        }
+
+        private static String buildPath(String parent, String child) {
+            return parent.isEmpty() ? child : parent + "." + child;
+        }
+    }
 
     /**
      * Parse capture configuration JSON.
@@ -90,6 +379,26 @@ public class ConfigParser {
             // Parse optional smart selection config
             if (json.has("smartConfig")) {
                 config.smartConfig = parseSmartSelectionConfig(json.getJSONObject("smartConfig"));
+            }
+
+            if (json.has("algoConfigBlob")) {
+                try {
+                    Object algoConfigObj = json.get("algoConfigBlob");
+
+                    if (algoConfigObj instanceof JSONObject) {
+                        JSONObject algoConfig = (JSONObject) algoConfigObj;
+                        String algoJsonString = algoConfig.toString();
+                        config.algoConfigBlob = algoJsonString.getBytes(StandardCharsets.UTF_8);
+                    } else if (algoConfigObj instanceof String) {
+                        String algoJsonString = (String) algoConfigObj;
+                        config.algoConfigBlob = algoJsonString.getBytes(StandardCharsets.UTF_8);
+                    } else {
+                        Log.w(LOG_TAG, "algoConfigBlob has unexpected type: " + algoConfigObj.getClass().getName());
+                    }
+                } catch (Exception e) {
+                    Log.e(LOG_TAG, "Failed to parse algoConfigBlob, setting to null", e);
+                    config.algoConfigBlob = null;
+                }
             }
 
             return config;
@@ -304,6 +613,27 @@ public class ConfigParser {
             // Parse optional smart selection config
             if (config.smartConfig != null) {
                 json.put("smartConfig", parseSmartSelectionConfigJson(config.smartConfig));
+            }
+
+            if (config.algoConfigBlob != null && config.algoConfigBlob.length > 0) {
+                try {
+                    // Convert byte array back to JSON string
+                    String algoJsonString = new String(config.algoConfigBlob, StandardCharsets.UTF_8);
+                    // Parse as JSON object to validate and embed
+                    JSONObject algoConfigJson = new JSONObject(algoJsonString);
+                    // Validate before saving
+                    ConfigValidator.ValidationResult validationResult =
+                        ConfigValidator.validate(algoConfigJson);
+
+                    if (!validationResult.isValid()) {
+                        Log.e(LOG_TAG, "ss_config validation failed during serialization: " +
+                            validationResult.getSummary());
+                    } else {
+                        json.put("algoConfigBlob", algoConfigJson);
+                    }
+                } catch (Exception e) {
+                    Log.e(LOG_TAG, "Failed to parse algoConfigBlob, skipping", e);
+                }
             }
 
             return json.toString();
