@@ -49,6 +49,20 @@ class ScrollTracker {
         final Rect lastVisibleRect = new Rect();
         // Stored for high-velocity intermediate capture tag.
         long lastEventTimestamp = 0;
+
+        /** Sync lastCapturedRect to the current position after any capture fires. */
+        void updateAfterCapture() {
+            if (!lastVisibleRect.isEmpty()) {
+                if (lastPositionY != -1) {
+                    lastCapturedRect.top = lastPositionY;
+                    lastCapturedRect.bottom = lastPositionY + lastVisibleRect.height();
+                }
+                if (lastPositionX != -1) {
+                    lastCapturedRect.left = lastPositionX;
+                    lastCapturedRect.right = lastPositionX + lastVisibleRect.width();
+                }
+            }
+        }
     }
 
     static class ListViewState {
@@ -56,6 +70,14 @@ class ScrollTracker {
         int lastCapturedToIndex = -1;
         final Rect lastCapturedFromRect = new Rect();
         final Rect lastCapturedToRect = new Rect();
+        // last known item count — for lazy-load / append detection (#6)
+        int lastItemCount = -1;
+        // visible rect bounds stored at last capture — for tall-item midpoint accounting (#8)
+        int lastCapturedFromRectHeight = -1;
+        int lastCapturedToRectHeight = -1;
+        // last-event visible rects — for same-indices pixel detection (#7)
+        final Rect lastVisibleFromRect = new Rect();
+        final Rect lastVisibleToRect = new Rect();
     }
 
     // -------------------------------------------------------------------------
@@ -122,6 +144,17 @@ class ScrollTracker {
     boolean isUserScrolling() {
         if (latestScrollingTime == 0) return false;
         return System.currentTimeMillis() <= (latestScrollingTime + DISABLE_SCROLLING_MILLIS);
+    }
+
+    /**
+     * Syncs lastCapturedRect on all tracked scroll widgets after any capture fires.
+     * Mirrors Kotlin's post-capture updatePosAfterCapturedScreen() loop over both maps.
+     * Must be called from the event thread immediately after captureCallback.onCapture().
+     */
+    void updateAllAfterCapture() {
+        for (ScrollViewState s : scrollViewStates.values()) {
+            s.updateAfterCapture();
+        }
     }
 
     /**
@@ -215,18 +248,6 @@ class ScrollTracker {
         state.lastEventTimestamp = now;
 
         if (shouldCapture) {
-            // Shift lastCapturedRect to current position for the next overlap check.
-            if (scrollY > 0) {
-                state.lastCapturedRect.top = scrollY;
-                state.lastCapturedRect.bottom = scrollY + visibleHeight;
-            }
-            if (scrollX > 0) {
-                state.lastCapturedRect.left = scrollX;
-                state.lastCapturedRect.right = scrollX + visibleWidth;
-            }
-        }
-
-        if (shouldCapture) {
             Log.i(TAG, "[DISPATCH_TIMER_FIRE] type=scroll_capture");
         } else {
             Log.v(TAG, "[DISPATCH_CAPTURE_SKIP] type=scroll reason=within_500ms_window");
@@ -270,16 +291,32 @@ class ScrollTracker {
         if (fromIndex == -1 && toIndex == -1) return false;
         if (visibleRect.isEmpty()) return false;
 
+        int itemCount = event.getItemCount();
+
         ListViewState state = listViewStates.get(hashCode);
         if (state == null) {
             state = new ListViewState();
             listViewStates.put(hashCode, state);
         }
 
-        // First scroll for this widget always capture.
-        if (state.lastCapturedFromIndex == -1 && state.lastCapturedToIndex == -1) {
-            updateListViewAfterCapture(state, fromIndex, toIndex, source);
+        // #6: First scroll OR new items appended (lazy-load / infinite-scroll detection).
+        boolean isFirstScroll = state.lastCapturedFromIndex == -1 && state.lastCapturedToIndex == -1;
+        boolean isNewItemsAppended = state.lastCapturedToIndex != -1
+                && itemCount > state.lastItemCount && state.lastItemCount != -1
+                && Math.abs(toIndex - state.lastCapturedToIndex) <= 1;
+        if (isFirstScroll || isNewItemsAppended) {
+            updateListViewAfterCapture(state, fromIndex, toIndex, itemCount, source);
             return true;
+        }
+
+        // Update current-event visible rects for #7 same-indices detection.
+        Rect curFromRect = new Rect();
+        Rect curToRect = new Rect();
+        if (source.getChildCount() >= 2) {
+            AccessibilityNodeInfo first = source.getChild(0);
+            AccessibilityNodeInfo last = source.getChild(source.getChildCount() - 1);
+            if (first != null) { first.getBoundsInScreen(curFromRect); first.recycle(); }
+            if (last != null)  { last.getBoundsInScreen(curToRect);  last.recycle();  }
         }
 
         int visibleMidY = visibleRect.centerY();
@@ -289,6 +326,18 @@ class ScrollTracker {
                 || fromIndex > state.lastCapturedFromIndex;
         boolean scrollingUp = toIndex < state.lastCapturedToIndex
                 || fromIndex < state.lastCapturedFromIndex;
+
+        // #7: Same indices but pixel position changed — detect via stored last-capture child rects.
+        boolean sameIndices = fromIndex == state.lastCapturedFromIndex
+                && toIndex == state.lastCapturedToIndex;
+        if (sameIndices && !curFromRect.isEmpty() && !state.lastCapturedFromRect.isEmpty()) {
+            if (curFromRect.bottom > state.lastCapturedFromRect.bottom) {
+                // Items moved up visually → user scrolled down within the same index window.
+                scrollingDown = true;
+            } else if (curFromRect.bottom < state.lastCapturedFromRect.bottom) {
+                scrollingUp = true;
+            }
+        }
 
         if (scrollingDown) {
             // childNodeIndex: position of the previously-captured toIndex within source's current children.
@@ -304,9 +353,20 @@ class ScrollTracker {
                     Rect childRect = new Rect();
                     child.getBoundsInScreen(childRect);
                     child.recycle();
-                    // Capture once the bottom edge of the previous toIndex crosses the midpoint.
-                    if (!childRect.isEmpty() && childRect.bottom < visibleMidY) {
-                        shouldCapture = true;
+                    if (!childRect.isEmpty()) {
+                        // #8: Tall-item midpoint accounting.
+                        // If the item spans more than half the viewport use its actual bottom;
+                        // otherwise use the stored capture-time height to reconstruct the bottom edge.
+                        int effectiveBottom;
+                        if (state.lastCapturedToRectHeight != -1
+                                && state.lastCapturedToRectHeight < visibleRect.height() / 2) {
+                            effectiveBottom = childRect.top + state.lastCapturedToRectHeight;
+                        } else {
+                            effectiveBottom = childRect.bottom;
+                        }
+                        if (effectiveBottom < visibleMidY) {
+                            shouldCapture = true;
+                        }
                     }
                 }
             }
@@ -322,16 +382,29 @@ class ScrollTracker {
                     Rect childRect = new Rect();
                     child.getBoundsInScreen(childRect);
                     child.recycle();
-                    // Capture once the top edge of the previous fromIndex crosses the midpoint.
-                    if (!childRect.isEmpty() && childRect.top > visibleMidY) {
-                        shouldCapture = true;
+                    if (!childRect.isEmpty()) {
+                        // #8: Tall-item midpoint accounting (scroll-up mirror).
+                        int effectiveTop;
+                        if (state.lastCapturedFromRectHeight != -1
+                                && state.lastCapturedFromRectHeight < visibleRect.height() / 2) {
+                            effectiveTop = childRect.bottom - state.lastCapturedFromRectHeight;
+                        } else {
+                            effectiveTop = childRect.top;
+                        }
+                        if (effectiveTop > visibleMidY) {
+                            shouldCapture = true;
+                        }
                     }
                 }
             }
         }
 
+        // Always update current-event visible rects for next-event #7 comparison.
+        state.lastVisibleFromRect.set(curFromRect);
+        state.lastVisibleToRect.set(curToRect);
+
         if (shouldCapture) {
-            updateListViewAfterCapture(state, fromIndex, toIndex, source);
+            updateListViewAfterCapture(state, fromIndex, toIndex, itemCount, source);
         }
 
         if (shouldCapture) {
@@ -344,19 +417,23 @@ class ScrollTracker {
     }
 
     private void updateListViewAfterCapture(ListViewState state, int fromIndex, int toIndex,
-            AccessibilityNodeInfo source) {
+            int itemCount, AccessibilityNodeInfo source) {
         state.lastCapturedFromIndex = fromIndex;
         state.lastCapturedToIndex = toIndex;
+        if (itemCount > 0) state.lastItemCount = itemCount;
         int childCount = source.getChildCount();
         if (childCount >= 2) {
             AccessibilityNodeInfo first = source.getChild(0);
             AccessibilityNodeInfo last = source.getChild(childCount - 1);
             if (first != null) {
                 first.getBoundsInScreen(state.lastCapturedFromRect);
+                // #8: record height at capture time for tall-item midpoint accounting.
+                state.lastCapturedFromRectHeight = state.lastCapturedFromRect.height();
                 first.recycle();
             }
             if (last != null) {
                 last.getBoundsInScreen(state.lastCapturedToRect);
+                state.lastCapturedToRectHeight = state.lastCapturedToRect.height();
                 last.recycle();
             }
         }

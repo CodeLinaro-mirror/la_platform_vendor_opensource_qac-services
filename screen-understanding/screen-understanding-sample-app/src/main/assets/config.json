@@ -27,7 +27,7 @@
             "activeuserId": "display_service_user",
             "smartSelectionDeviceConfig": {
                 "device": "npu",
-                "cpu_config_path": "/vendor/etc/smartselection/models/npu/cpu_config.json",
+                "cpu_config_path": "/vendor/etc/smartselection/models/cpu/cpu_config.json",
                 "npu_config_path": "/vendor/etc/smartselection/models/npu/npu_config.json"
             },
             "smartSelectionAppConfig": [

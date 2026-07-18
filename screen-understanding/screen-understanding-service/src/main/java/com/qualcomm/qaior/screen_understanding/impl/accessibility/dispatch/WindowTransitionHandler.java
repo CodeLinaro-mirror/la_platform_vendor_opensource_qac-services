@@ -8,14 +8,15 @@ package com.qualcomm.qaior.screen_understanding.impl.accessibility.dispatch;
 import android.os.Handler;
 import android.os.SystemClock;
 import android.util.Log;
+import android.view.accessibility.AccessibilityEvent;
 
 /**
  *
- * On TYPE_WINDOWS_CHANGED, the system fires rapid bursts of events while windows
- * animate in/out. startOrResetDebounce arms a 300 ms debounce; on expiry it polls
+ * On TYPE_WINDOWS_CHANGED / TYPE_WINDOW_STATE_CHANGED, the system fires rapid bursts of events
+ * while windows animate in/out. startOrResetDebounce arms a 300 ms debounce; on expiry it polls
  * until the UI has been quiet for another 300 ms, then fires a single capture via
- * CaptureCallback. All debounce runnables run on the event thread (the same
- * Handler passed at construction) so no extra synchronisation is needed for fields
+ * CaptureCallback with tag "window_settled". All debounce runnables run on the event thread (the
+ * same Handler passed at construction) so no extra synchronisation is needed for fields
  * accessed only from that thread.
  *
  */
@@ -90,12 +91,10 @@ class WindowTransitionHandler {
                     return;
                 }
 
-                Log.i(TAG, "[DISPATCH_TIMER_FIRE] type=window_transition result=capture tag=window_settled");
+                Log.i(TAG, "[DISPATCH_TIMER_FIRE] type=window_transition result=capture app=" + pendingAppName);
 
-                // UI has settled — fire the capture and clear state.
                 debouncing = false;
                 debounceRunnable = null;
-                Log.v(TAG, "Window settled; firing capture for " + pendingAppName);
                 captureCallback.onCapture(pendingAppName, pendingEventType,
                         System.currentTimeMillis(), "window_settled");
             }
