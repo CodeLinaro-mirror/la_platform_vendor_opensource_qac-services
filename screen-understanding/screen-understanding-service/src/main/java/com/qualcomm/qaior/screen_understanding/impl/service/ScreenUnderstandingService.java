@@ -411,9 +411,10 @@ public class ScreenUnderstandingService extends Service implements NativeBridge.
             queue.put(item);
 
             // Persist the updated array
-            prefs.edit().putString("command_queue", queue.toString());
-            prefs.edit().putLong("sessionId", sessionId);
-            prefs.edit().apply();
+            prefs.edit()
+                .putString("command_queue", queue.toString())
+                .putLong("sessionId", sessionId)
+                .apply();
 
         } catch (JSONException e) {
             // If parsing fails, start fresh with an array containing only the new command
@@ -425,9 +426,10 @@ public class ScreenUnderstandingService extends Service implements NativeBridge.
                 item.put("config", config);
                 fresh.put(item);
 
-                prefs.edit().putLong("sessionId", sessionId);
-                prefs.edit().putString("command_queue", fresh.toString());
-                prefs.edit().apply();
+                prefs.edit()
+                    .putLong("sessionId", sessionId)
+                    .putString("command_queue", fresh.toString())
+                    .apply();
             } catch (JSONException jsonException) {
                 Log.e(tag, "Failed to create JSON for pending command.", jsonException);
             }
