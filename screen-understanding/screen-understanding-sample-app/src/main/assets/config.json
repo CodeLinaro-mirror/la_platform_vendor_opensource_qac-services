@@ -65,6 +65,9 @@
                         "spatial_pruning_top_k_per_cell": 20,
                         "spatial_dist_tol": 1.0,
                         "min_cluster_size": 20
+                    },
+                    "rejectNonContentFrames": {
+                        "enabled": true
                     }
                 },
                 {
@@ -101,6 +104,9 @@
                         "spatial_pruning_top_k_per_cell": 20,
                         "spatial_dist_tol": 1.0,
                         "min_cluster_size": 20
+                    },
+                    "rejectNonContentFrames": {
+                        "enabled": true
                     }
                 }
             ]
@@ -160,6 +166,9 @@
                         "spatial_pruning_top_k_per_cell": 20,
                         "spatial_dist_tol": 1.0,
                         "min_cluster_size": 20
+                    },
+                    "rejectNonContentFrames": {
+                        "enabled": true
                     }
                 },
                 {
@@ -196,6 +205,9 @@
                         "spatial_pruning_top_k_per_cell": 20,
                         "spatial_dist_tol": 1.0,
                         "min_cluster_size": 20
+                    },
+                    "rejectNonContentFrames": {
+                        "enabled": true
                     }
                 }
             ]

@@ -145,12 +145,20 @@ public class ConfigParser {
                 new FieldSpec("queue_threshold_config", true, queueThresholdSpec)
             );
 
+            // rejectNonContentFrames spec (optional pixel pre-filter).
+            // Only "enabled" is configurable; crop ratios are fixed constants
+            // in the native NonContentFilter. Absent -> native defaults to enabled.
+            StructureSpec rejectNonContentSpec = new StructureSpec(
+                new FieldSpec("enabled", true)
+            );
+
             // App config spec (array item)
             StructureSpec appConfigSpec = new StructureSpec(
                 new FieldSpec("appName", true),
                 new FieldSpec("selector", true, selectorSpec),
                 new FieldSpec("extractor", true, extractorSpec),
-                new FieldSpec("matcher", true, matcherSpec)
+                new FieldSpec("matcher", true, matcherSpec),
+                new FieldSpec("rejectNonContentFrames", false, rejectNonContentSpec)
             );
 
             // Device config spec
