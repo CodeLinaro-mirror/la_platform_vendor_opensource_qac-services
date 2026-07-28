@@ -143,7 +143,8 @@ public class EventDispatcher {
 
         // Mark UI as changed for window-transition stability tracking.
         if (eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED
-                || eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
+                || eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+                || eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             windowTransitionHandler.markUiChanged();
         }
 
@@ -164,6 +165,13 @@ public class EventDispatcher {
 
         switch (eventType) {
             case AccessibilityEvent.TYPE_VIEW_SCROLLED: {
+                // System-induced scrolls during typing (keyboard pushing list up) must not fire captures.
+                if (typingDetector.isUserTyping()) {
+                    scrollTracker.markScrolling();
+                    Log.v(TAG, "[DISPATCH_CAPTURE_SKIP] type=scroll reason=user_typing");
+                    break;
+                }
+
                 if (windowTransitionHandler.isWaitingEvent()) {
                     // Keep isUserScrolling() current during transitions; skip capture and trailing.
                     scrollTracker.markScrolling();
@@ -174,6 +182,7 @@ public class EventDispatcher {
                 boolean capture = scrollTracker.shouldCapture(event, appName, captureCallback);
                 if (capture) {
                     captureCallback.onCapture(appName, eventType, timestamp, "");
+                    scrollTracker.updateAllAfterCapture();
                     contentChangedHandler.updateUiScreenChangeTs();
                 }
                 scheduleTrailingCapture(appName);
@@ -193,16 +202,18 @@ public class EventDispatcher {
                         }
                     }
                     Log.v(TAG, "tag " + tag);
-                    captureCallback.onCapture(appName, eventType, timestamp, "");
+                    captureCallback.onCapture(appName, eventType, timestamp, tag);
                 }
                 break;
             }
 
             case AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED: {
-                clickDeduplicator.reset();
-                scrollTracker.resetScrollSession();
                 cancelTrailingCapture();
-                windowTransitionHandler.cancelDebounce();
+                contentChangedHandler.updateUiScreenChangeTs();
+                windowTransitionHandler.startOrResetDebounce(
+                        appName, eventType,
+                        clickDeduplicator::reset,
+                        scrollTracker::resetScrollSession);
                 break;
             }
 
@@ -218,6 +229,7 @@ public class EventDispatcher {
                 // once the UI is stable (300 ms quiet). Also cancel any in-flight trailing capture
                 // to avoid a spurious scroll_final firing mid-transition.
                 cancelTrailingCapture();
+                contentChangedHandler.updateUiScreenChangeTs();
                 windowTransitionHandler.startOrResetDebounce(
                         appName, eventType,
                         clickDeduplicator::reset,
@@ -239,13 +251,18 @@ public class EventDispatcher {
         Log.d(TAG, "[DISPATCH_TIMER_START] type=trailing_capture delay_ms=" + TRAILING_DELAY_MS +
         " app=" + appName);
         Runnable runnable = () -> eventHandler.post(() -> {
-            if (!scrollTracker.isUserScrolling() && !windowTransitionHandler.isWaitingEvent()) {
+            if (!scrollTracker.isUserScrolling() && !windowTransitionHandler.isWaitingEvent()
+                && !typingDetector.isUserTyping()) {
                 Log.d(TAG, "[DISPATCH_TIMER_FIRE] type=trailing_capture result=capture");
                 captureCallback.onCapture(appName, AccessibilityEvent.TYPE_VIEW_SCROLLED,
-                        System.currentTimeMillis(), "");
+                        System.currentTimeMillis(), "scroll_final");
+                // Mirror Kotlin: reset per-widget state so the first scroll of the next burst
+                // isn't blocked by stale lastCapturedRect from this session.
+                scrollTracker.resetScrollSession();
             } else {
                 Log.d(TAG, "[DISPATCH_CAPTURE_SKIP] type=trailing_capture reason=" +
-                (scrollTracker.isUserScrolling() ? "still_scrolling" : "window_transition"));
+                (scrollTracker.isUserScrolling() ? "still_scrolling" :
+                windowTransitionHandler.isWaitingEvent() ? "window_transition" : "user_typing"));
             }
         });
         trailingCaptureRunnable = runnable;
