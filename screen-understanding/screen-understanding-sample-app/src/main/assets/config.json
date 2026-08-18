@@ -22,6 +22,94 @@
             "inputWidth": 288,
             "inputHeight": 640,
             "pixelFormat": 1
+        },
+        "ss_config":{
+            "activeuserId": "display_service_user",
+            "smartSelectionDeviceConfig": {
+                "device": "npu",
+                "cpu_config_path": "/vendor/etc/smartselection/models/cpu/cpu_config.json",
+                "npu_config_path": "/vendor/etc/smartselection/models/npu/npu_config.json"
+            },
+            "smartSelectionAppConfig": [
+                {
+                    "appName": "com.whatsapp",
+                    "selector": {
+                        "accept_threshold": 0.0,
+                        "remove_threshold": 0.05,
+                        "max_size": 256,
+                        "pruning_strategy": "lowest_score",
+                        "queue_threshold_config": {
+                            "enabled": true,
+                            "notification_threshold": 50,
+                            "hysteresis": 5
+                        }
+                    },
+                    "extractor": {
+                        "top_k": 4096,
+                        "detection_threshold": 0.3,
+                        "is_path": true,
+                        "use_fixed_size": true,
+                        "preproc_fixed_height": 640,
+                        "preproc_fixed_width": 288
+                    },
+                    "matcher": {
+                        "min_cossim": 0.9,
+                        "heatmap_cossim": 0.82,
+                        "zero_translation_cossim": 0.95,
+                        "mnn_matcher_n_max": 1500,
+                        "mnn_matcher_m_max": 1500,
+                        "mnn_matcher_d": 64,
+                        "mnn_matcher_pretranspose_desc2": false,
+                        "use_spatial_pruning": true,
+                        "spatial_pruning_grid_size": 64,
+                        "spatial_pruning_top_k_per_cell": 20,
+                        "spatial_dist_tol": 1.0,
+                        "min_cluster_size": 20
+                    },
+                    "rejectNonContentFrames": {
+                        "enabled": true
+                    }
+                },
+                {
+                    "appName": "com.android.settings",
+                    "selector": {
+                        "accept_threshold": 0.0,
+                        "remove_threshold": 0.05,
+                        "max_size": 256,
+                        "pruning_strategy": "lowest_score",
+                        "queue_threshold_config": {
+                            "enabled": true,
+                            "notification_threshold": 50,
+                            "hysteresis": 5
+                        }
+                    },
+                    "extractor": {
+                        "top_k": 4096,
+                        "detection_threshold": 0.3,
+                        "is_path": true,
+                        "use_fixed_size": true,
+                        "preproc_fixed_height": 640,
+                        "preproc_fixed_width": 288
+                    },
+                    "matcher": {
+                        "min_cossim": 0.9,
+                        "heatmap_cossim": 0.82,
+                        "zero_translation_cossim": 0.95,
+                        "mnn_matcher_n_max": 1500,
+                        "mnn_matcher_m_max": 1500,
+                        "mnn_matcher_d": 64,
+                        "mnn_matcher_pretranspose_desc2": false,
+                        "use_spatial_pruning": true,
+                        "spatial_pruning_grid_size": 64,
+                        "spatial_pruning_top_k_per_cell": 20,
+                        "spatial_dist_tol": 1.0,
+                        "min_cluster_size": 20
+                    },
+                    "rejectNonContentFrames": {
+                        "enabled": true
+                    }
+                }
+            ]
         }
     },
     "updateConfig": {
@@ -29,9 +117,101 @@
         "appList": [
             {
                 "packageName": "com.whatsapp",
+                "isSensitive": false
+            },
+            {
+                "packageName": "com.amazon.mShop.android.shopping",
                 "isSensitive": true
             }
-        ]
+        ],
+        "ss_config":{
+            "activeuserId": "display_service_user",
+            "smartSelectionDeviceConfig": {
+                "device": "npu",
+                "cpu_config_path": "/vendor/etc/smartselection/models/npu/cpu_config.json",
+                "npu_config_path": "/vendor/etc/smartselection/models/npu/npu_config.json"
+            },
+            "smartSelectionAppConfig": [
+                {
+                    "appName": "com.whatsapp",
+                    "selector": {
+                        "accept_threshold": 0.0,
+                        "remove_threshold": 0.05,
+                        "max_size": 256,
+                        "pruning_strategy": "lowest_score",
+                        "queue_threshold_config": {
+                            "enabled": true,
+                            "notification_threshold": 50,
+                            "hysteresis": 5
+                        }
+                    },
+                    "extractor": {
+                        "top_k": 4096,
+                        "detection_threshold": 0.3,
+                        "is_path": true,
+                        "use_fixed_size": true,
+                        "preproc_fixed_height": 640,
+                        "preproc_fixed_width": 288
+                    },
+                    "matcher": {
+                        "min_cossim": 0.9,
+                        "heatmap_cossim": 0.82,
+                        "zero_translation_cossim": 0.95,
+                        "mnn_matcher_n_max": 1500,
+                        "mnn_matcher_m_max": 1500,
+                        "mnn_matcher_d": 64,
+                        "mnn_matcher_pretranspose_desc2": false,
+                        "use_spatial_pruning": true,
+                        "spatial_pruning_grid_size": 64,
+                        "spatial_pruning_top_k_per_cell": 20,
+                        "spatial_dist_tol": 1.0,
+                        "min_cluster_size": 20
+                    },
+                    "rejectNonContentFrames": {
+                        "enabled": true
+                    }
+                },
+                {
+                    "appName": "com.amazon.mShop.android.shopping",
+                    "selector": {
+                        "accept_threshold": 0.0,
+                        "remove_threshold": 0.05,
+                        "max_size": 256,
+                        "pruning_strategy": "lowest_score",
+                        "queue_threshold_config": {
+                            "enabled": true,
+                            "notification_threshold": 50,
+                            "hysteresis": 5
+                        }
+                    },
+                    "extractor": {
+                        "top_k": 4096,
+                        "detection_threshold": 0.3,
+                        "is_path": true,
+                        "use_fixed_size": true,
+                        "preproc_fixed_height": 640,
+                        "preproc_fixed_width": 288
+                    },
+                    "matcher": {
+                        "min_cossim": 0.9,
+                        "heatmap_cossim": 0.82,
+                        "zero_translation_cossim": 0.95,
+                        "mnn_matcher_n_max": 1500,
+                        "mnn_matcher_m_max": 1500,
+                        "mnn_matcher_d": 64,
+                        "mnn_matcher_pretranspose_desc2": false,
+                        "use_spatial_pruning": true,
+                        "spatial_pruning_grid_size": 64,
+                        "spatial_pruning_top_k_per_cell": 20,
+                        "spatial_dist_tol": 1.0,
+                        "min_cluster_size": 20
+                    },
+                    "rejectNonContentFrames": {
+                        "enabled": true
+                    }
+                }
+            ]
+        }
     },
     "deleteConfig": {
         "deleteAll": false

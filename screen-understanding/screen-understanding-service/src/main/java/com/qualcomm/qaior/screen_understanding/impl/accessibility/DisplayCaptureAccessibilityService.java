@@ -27,6 +27,9 @@ import com.qualcomm.qaior.screen_understanding.impl.accessibility.dispatch.Captu
 import com.qualcomm.qaior.screen_understanding.impl.accessibility.dispatch.EventDispatcher;
 import com.qualcomm.qaior.screen_understanding.impl.accessibility.dispatch.RootNodeProvider;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -41,6 +44,13 @@ public class DisplayCaptureAccessibilityService extends AccessibilityService
     private boolean isReceiverRegistered = false;
 
     private EventDispatcher eventDispatcher;
+
+    /**
+     * Mirror of AccessibilityServiceInfo.packageNames for the active session.
+     * Written on the main thread (startSession/updateConfig/stopSession).
+     * Read from any thread in onCapture — volatile ensures visibility.
+     */
+    private volatile Set<String> allowedPackages = Collections.emptySet();
 
     private static final String NOTIFICATION_CHANNEL_ID = "accessibility_screen_capture";
     private static final int NOTIFICATION_ID = 2001;
@@ -123,6 +133,33 @@ public class DisplayCaptureAccessibilityService extends AccessibilityService
 
     @Override
     public void onCapture(String appName, int eventType, long timestamp, String tag) {
+        Set<String> allowed = allowedPackages;
+
+        // Primary guard: drop captures for packages not in the session allow-list.
+        if (!allowed.isEmpty() && !allowed.contains(appName)) {
+            Log.d(logTag, "onCapture: dropping non-session package: " + appName);
+            return;
+        }
+
+        // Secondary guard for timer-fired captures (window_settled, scroll_final):
+        // by the time the debounce/trailing delay expires the user may have navigated
+        // to a non-session app (e.g. home screen). Verify the current active window
+        // is still an allowed package before forwarding to NativeBridge.
+        if ("window_settled".equals(tag) || "scroll_final".equals(tag)) {
+            android.view.accessibility.AccessibilityNodeInfo root = getRootInActiveWindow();
+            String activePackage = null;
+            if (root != null) {
+                CharSequence pkg = root.getPackageName();
+                activePackage = (pkg != null) ? pkg.toString() : null;
+                root.recycle();
+            }
+            if (activePackage != null && !allowed.isEmpty() && !allowed.contains(activePackage)) {
+                Log.d(logTag, "onCapture: dropping " + tag
+                        + " — active window is non-session package: " + activePackage);
+                return;
+            }
+        }
+
         NativeBridge bridge = SharedObjects.getNativeBridge();
         if (bridge != null && bridge.isConnected()) {
             bridge.triggerCapture(sessionId, appName, eventType, timestamp, tag);
@@ -213,6 +250,8 @@ public class DisplayCaptureAccessibilityService extends AccessibilityService
                     setServiceInfo(info);
                 }
 
+                allowedPackages = new HashSet<>(Arrays.asList(packageNames));
+
                 showRecordingNotification();
             }
         } catch (JSONException e) {
@@ -228,6 +267,7 @@ public class DisplayCaptureAccessibilityService extends AccessibilityService
         Log.i(logTag, "session ends here");
         ongoingSession = false;
         sessionId = -1;
+        allowedPackages = Collections.emptySet();
 
         Log.i(logTag, "stop config" + config);
 
@@ -275,6 +315,8 @@ public class DisplayCaptureAccessibilityService extends AccessibilityService
                     // Apply the updated config
                     setServiceInfo(info);
                 }
+
+                allowedPackages = new HashSet<>(Arrays.asList(packageNames));
             }
 
             // Update notification visibility

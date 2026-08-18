@@ -10,8 +10,8 @@ android_app {
     asset_dirs: ["assets"],
 
     static_libs: [
-        "vendor.qti.qaior.screen_understanding-V1-java",
-        "vendor.qti.screen_understanding.display_capture-V1-java",
+        "vendor.qti.qaior.screen_understanding-V2-java",
+        "vendor.qti.screen_understanding.display_capture-V2-java",
         "androidx.appcompat_appcompat",
         "androidx.core_core",
     ],
