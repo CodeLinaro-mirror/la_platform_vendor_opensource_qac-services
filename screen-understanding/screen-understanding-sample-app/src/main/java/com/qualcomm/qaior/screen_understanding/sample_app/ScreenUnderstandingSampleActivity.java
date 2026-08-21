@@ -5,6 +5,11 @@
 
 package com.qualcomm.qaior.screen_understanding.sample_app;
 
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.Service;
+import android.os.Binder;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -51,7 +56,8 @@ public class ScreenUnderstandingSampleActivity extends AppCompatActivity {
     private static final int STORAGE_PERMISSION_REQUEST_CODE = 101;
 
     private IScreenUnderstandingService service;
-    private CaptureDataClient mDataClient = null;
+    private ServiceConnection mDataServiceConnection = null;
+    private CaptureDataService.LocalBinder mDataServiceBinder = null;
     private boolean isBound = false;
     private boolean isDataServiceBound = false;
     private String currentSessionId = null;
@@ -262,23 +268,43 @@ public class ScreenUnderstandingSampleActivity extends AppCompatActivity {
     }
 
     private void bindDataService() {
-        if (mDataClient == null) {
-            // use default config (all)
-            mDataClient = new CaptureDataClient(this);
-            isDataServiceBound = true;
-            updateUI();
-            statusText.setText("Data service bound");
-        } else {
+        if (mDataServiceConnection != null) {
             statusText.setText("Data service already bound");
+            return;
         }
+        Intent dataIntent = new Intent(this, CaptureDataService.class);
+        mDataServiceConnection = new ServiceConnection() {
+            @Override
+            public void onServiceConnected(ComponentName name, IBinder binder) {
+                mDataServiceBinder = (CaptureDataService.LocalBinder) binder;
+                mDataServiceBinder.setConnectionListener(mDataClientConnectionListener);
+                mDataServiceBinder.setDoScreenshotDump(switchDumpScreenshot.isChecked());
+                try {
+                    mDataServiceBinder.setCompressionEnabled(switchDoCompression.isChecked());
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to apply compression pref on bind", e);
+                }
+                isDataServiceBound = true;
+                updateUI();
+                statusText.setText("Data service bound");
+            }
+            @Override
+            public void onServiceDisconnected(ComponentName name) {
+                mDataServiceBinder = null;
+                isDataServiceBound = false;
+                updateUI();
+            }
+        };
+        ContextCompat.startForegroundService(this, dataIntent);
+        bindService(dataIntent, mDataServiceConnection, Context.BIND_AUTO_CREATE);
     }
 
     private void onDoCompressionChanged(boolean isChecked) {
         Log.i(TAG, "doCompression changed to: " + isChecked);
         statusText.setText("doCompression: " + (isChecked ? "enabled" : "disabled"));
-        if (mDataClient != null) {
+        if (mDataServiceBinder != null) {
             try {
-                mDataClient.setCompressionEnabled(isChecked);
+                mDataServiceBinder.setCompressionEnabled(isChecked);
             } catch (Exception e) {
                 statusText.setText("Change Config Error: " + e.getMessage());
             }
@@ -288,8 +314,8 @@ public class ScreenUnderstandingSampleActivity extends AppCompatActivity {
     private void onDumpScreenshotChanged(boolean isChecked) {
         Log.i(TAG, "DumpScreenshot changed to: " + isChecked);
         statusText.setText("DumpScreenshot: " + (isChecked ? "enabled" : "disabled"));
-        if (mDataClient != null) {
-            mDataClient.setDoScreenshotDump(isChecked);
+        if (mDataServiceBinder != null) {
+            mDataServiceBinder.setDoScreenshotDump(isChecked);
         }
     }
 
@@ -477,6 +503,8 @@ public class ScreenUnderstandingSampleActivity extends AppCompatActivity {
         btnUpdateConfig.setEnabled(isBound && (currentSessionId != null));
         btnDeleteCapture.setEnabled(isBound && (currentSessionId != null));
         btnRunScenario.setEnabled(isBound);
+        switchDumpScreenshot.setEnabled(isDataServiceBound);
+        switchDoCompression.setEnabled(isDataServiceBound);
     }
 
     @Override
@@ -486,10 +514,61 @@ public class ScreenUnderstandingSampleActivity extends AppCompatActivity {
             unbindService(connection);
             isBound = false;
         }
-        if (mDataClient != null) {
-            mDataClient.teardown();
-            mDataClient = null;
+        if (mDataServiceConnection != null) {
+            unbindService(mDataServiceConnection);
+            mDataServiceConnection = null;
             isDataServiceBound = false;
+        }
+    }
+
+    public static class CaptureDataService extends Service {
+        private static final String NOTIF_CHANNEL_ID = "capture_data_svc";
+        private static final int NOTIF_ID = 2001;
+
+        private CaptureDataClient mDataClient;
+
+        public class LocalBinder extends Binder {
+            void setConnectionListener(CaptureDataClient.ConnectionListener l) {
+                if (mDataClient != null) mDataClient.setConnectionListener(l);
+            }
+            void setDoScreenshotDump(boolean dump) {
+                if (mDataClient != null) mDataClient.setDoScreenshotDump(dump);
+            }
+            void setCompressionEnabled(boolean enabled) throws RemoteException {
+                if (mDataClient != null) mDataClient.setCompressionEnabled(enabled);
+            }
+        }
+
+        private final LocalBinder mBinder = new LocalBinder();
+
+        @Override
+        public IBinder onBind(Intent intent) {
+            return mBinder;
+        }
+
+        @Override
+        public int onStartCommand(Intent intent, int flags, int startId) {
+            NotificationChannel channel = new NotificationChannel(
+                    NOTIF_CHANNEL_ID, "Capture Data", NotificationManager.IMPORTANCE_LOW);
+            getSystemService(NotificationManager.class).createNotificationChannel(channel);
+            startForeground(NOTIF_ID,
+                    new Notification.Builder(this, NOTIF_CHANNEL_ID)
+                            .setContentTitle("Screen capture data active")
+                            .setSmallIcon(android.R.drawable.ic_menu_camera)
+                            .build());
+            if (mDataClient == null) {
+                mDataClient = new CaptureDataClient(this);
+            }
+            return START_STICKY;
+        }
+
+        @Override
+        public void onDestroy() {
+            if (mDataClient != null) {
+                mDataClient.teardown();
+                mDataClient = null;
+            }
+            super.onDestroy();
         }
     }
 }
