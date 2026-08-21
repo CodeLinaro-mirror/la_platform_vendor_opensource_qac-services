@@ -27,7 +27,12 @@ class ScrollTracker {
 
     static final long DISABLE_SCROLLING_MILLIS = 500;
 
+    /** Max gap between last user interaction and a horizontal scroll for it to count as user-driven. */
+    private static final long AUTO_SCROLL_MAX_GAP_MS = 800L;
+
     private volatile long latestScrollingTime = 0;
+    /** Updated on click and on any vertical scroll that passes the gate. */
+    private volatile long lastUserInteractionMs = 0;
 
     private int screenWidth = 0;
     private int screenHeight = 0;
@@ -108,6 +113,29 @@ class ScrollTracker {
             source.getBoundsInScreen(visibleRect);
             if (visibleRect.isEmpty()) return false;
 
+            // Gate 1: media-surface widgets scroll via auto-play, never user touch.
+            CharSequence cls = source.getClassName();
+            if (cls != null && isAutoMediaClass(cls.toString())) {
+                Log.v(TAG, "[DISPATCH_CAPTURE_SKIP] type=scroll reason=auto_media_class cls=" + cls);
+                return false;
+            }
+
+            // Gate 2: horizontal-only carousel filter.
+            // Pure horizontal scroll with no recent user interaction → auto-play, suppress.
+            // Vertical / mixed scroll → user intent; refresh the interaction timestamp.
+            boolean isHorizontalOnly =
+                Math.abs(event.getScrollY()) < 1 && Math.abs(event.getScrollX()) >= 1;
+            if (isHorizontalOnly) {
+                long msSince = System.currentTimeMillis() - lastUserInteractionMs;
+                if (msSince > AUTO_SCROLL_MAX_GAP_MS) {
+                    Log.v(TAG, "[DISPATCH_CAPTURE_SKIP] type=scroll reason=auto_horizontal_carousel"
+                            + " gap_ms=" + msSince);
+                    return false;
+                }
+            } else if (Math.abs(event.getScrollY()) >= 1) {
+                lastUserInteractionMs = System.currentTimeMillis();
+            }
+
             if (screenWidth > 0 && screenHeight > 0) {
                 long visibleArea = (long) visibleRect.width() * visibleRect.height();
                 long screenArea = (long) screenWidth * screenHeight;
@@ -140,6 +168,10 @@ class ScrollTracker {
         latestScrollingTime = System.currentTimeMillis();
     }
 
+    void markUserInteraction() {
+        lastUserInteractionMs = System.currentTimeMillis();
+    }
+
     /** Returns true if a scroll event arrived within the last DISABLE_SCROLLING_MILLIS ms. */
     boolean isUserScrolling() {
         if (latestScrollingTime == 0) return false;
@@ -165,6 +197,7 @@ class ScrollTracker {
         listViewStates.clear();
         scrollViewStates.clear();
         latestScrollingTime = 0;
+        lastUserInteractionMs = 0;
     }
 
     /** Alias used on session stop/start to fully reset all state. */
@@ -437,5 +470,11 @@ class ScrollTracker {
                 last.recycle();
             }
         }
+    }
+
+    private static boolean isAutoMediaClass(String className) {
+        return className.equals("android.widget.VideoView")
+            || className.equals("android.view.SurfaceView")
+            || className.equals("android.view.TextureView");
     }
 }

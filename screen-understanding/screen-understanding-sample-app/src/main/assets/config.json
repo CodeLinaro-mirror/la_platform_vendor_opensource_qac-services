@@ -12,7 +12,7 @@
             },
             {
                 "packageName": "com.whatsapp",
-                "isSensitive": true
+                "isSensitive": false
             }
         ],
         "smartConfig": {

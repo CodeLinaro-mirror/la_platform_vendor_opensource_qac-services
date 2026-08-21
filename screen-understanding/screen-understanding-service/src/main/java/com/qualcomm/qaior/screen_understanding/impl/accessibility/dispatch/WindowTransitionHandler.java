@@ -41,6 +41,8 @@ class WindowTransitionHandler {
 
     private volatile long lastUiChangeTs = 0;
 
+    private ContentChangedHandler contentChangedHandler;
+
     /** Written only from event thread; accessed only from event thread. */
     private String pendingAppName;
     private int pendingEventType;
@@ -48,6 +50,10 @@ class WindowTransitionHandler {
     WindowTransitionHandler(Handler eventHandler, CaptureCallback captureCallback) {
         this.eventHandler = eventHandler;
         this.captureCallback = captureCallback;
+    }
+
+    void setContentChangedHandler(ContentChangedHandler handler) {
+        this.contentChangedHandler = handler;
     }
 
     // -------------------------------------------------------------------------
@@ -95,8 +101,16 @@ class WindowTransitionHandler {
 
                 debouncing = false;
                 debounceRunnable = null;
-                captureCallback.onCapture(pendingAppName, pendingEventType,
-                        System.currentTimeMillis(), "window_settled");
+                // Do NOT fire window_settled immediately — the page may still be blank (skeleton/spinner).
+                // Delegate the capture to ContentChangedHandler's stability poll, which fires only once
+                // the accessibility tree has loaded content. Falls back to no capture on timeout.
+                if (contentChangedHandler != null) {
+                    contentChangedHandler.updateUiScreenChangeTs();
+                    contentChangedHandler.checkAfterWindowSettled(pendingAppName, pendingEventType);
+                } else {
+                    captureCallback.onCapture(pendingAppName, pendingEventType,
+                            System.currentTimeMillis(), "window_settled");
+                }
             }
         };
         debounceRunnable = stabilityCheck;
