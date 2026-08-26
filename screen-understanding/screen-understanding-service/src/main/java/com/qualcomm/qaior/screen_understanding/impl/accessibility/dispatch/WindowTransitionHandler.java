@@ -27,6 +27,11 @@ class WindowTransitionHandler {
     /** Matches WindowsStateChangedEventHandler.STATE_CHANGED_WAIT_TIME_MS. */
     static final long STATE_CHANGED_WAIT_TIME_MS = 300L;
 
+    /** Extra settle window after the debounce gate drops. Keyed only on
+     *  STATE_CHANGED / WINDOWS_CHANGED — not CONTENT_CHANGED — so it does not
+     *  suppress legitimate user scrolls that interleave with content updates. */
+    static final long RENDER_SETTLE_MS = 800L;
+
     private final Handler eventHandler;
     private final CaptureCallback captureCallback;
 
@@ -40,6 +45,11 @@ class WindowTransitionHandler {
     private volatile Runnable debounceRunnable = null;
 
     private volatile long lastUiChangeTs = 0;
+
+    /** Wall-clock time of the last transition event (STATE_CHANGED / WINDOWS_CHANGED).
+     *  Written by markTransition() on the event thread; read by the scroll branch via
+     *  timeSinceTransition() to suppress rendering-induced scroll captures. */
+    private volatile long lastTransitionTs = 0L;
 
     private ContentChangedHandler contentChangedHandler;
 
@@ -56,6 +66,18 @@ class WindowTransitionHandler {
         this.contentChangedHandler = handler;
     }
 
+    /** Records the current wall-clock time as the last transition instant.
+     *  Must be called on the event thread before startOrResetDebounce. */
+    void markTransition() {
+        lastTransitionTs = System.currentTimeMillis();
+    }
+
+    /** Milliseconds elapsed since the last navigation transition. */
+    long timeSinceTransition() {
+        return System.currentTimeMillis() - lastTransitionTs;
+    }
+
+
     // -------------------------------------------------------------------------
     // Public API
     // -------------------------------------------------------------------------
@@ -68,9 +90,10 @@ class WindowTransitionHandler {
      *
      * @param resetClick  runnable that re-arms the click deduplicator
      * @param resetScroll runnable that clears scroll-session timing
+     * @param shouldCapture  when false, debounce still runs (keeps gate active) but no capture fires
      */
     void startOrResetDebounce(String appName, int eventType,
-            Runnable resetClick, Runnable resetScroll) {
+            Runnable resetClick, Runnable resetScroll, boolean shouldCapture) {
         cancelDebounce();
         resetClick.run();
         resetScroll.run();
@@ -97,19 +120,21 @@ class WindowTransitionHandler {
                     return;
                 }
 
-                Log.i(TAG, "[DISPATCH_TIMER_FIRE] type=window_transition result=capture app=" + pendingAppName);
-
                 debouncing = false;
                 debounceRunnable = null;
-                // Do NOT fire window_settled immediately — the page may still be blank (skeleton/spinner).
-                // Delegate the capture to ContentChangedHandler's stability poll, which fires only once
-                // the accessibility tree has loaded content. Falls back to no capture on timeout.
-                if (contentChangedHandler != null) {
-                    contentChangedHandler.updateUiScreenChangeTs();
-                    contentChangedHandler.checkAfterWindowSettled(pendingAppName, pendingEventType);
+                if (shouldCapture) {
+                    Log.i(TAG, "[DISPATCH_TIMER_FIRE] type=window_transition result=capture app=" + pendingAppName);
+                    // Do NOT fire window_settled immediately — the page may still be blank.
+                    // Delegate to ContentChangedHandler's stability poll.
+                    if (contentChangedHandler != null) {
+                        contentChangedHandler.updateUiScreenChangeTs();
+                        contentChangedHandler.checkAfterWindowSettled(pendingAppName, pendingEventType);
+                    } else {
+                        captureCallback.onCapture(pendingAppName, pendingEventType,
+                                System.currentTimeMillis(), "window_settled");
+                    }
                 } else {
-                    captureCallback.onCapture(pendingAppName, pendingEventType,
-                            System.currentTimeMillis(), "window_settled");
+                    Log.d(TAG, "[DISPATCH_TIMER_FIRE] type=window_transition result=no_capture (shouldCapture=false)");
                 }
             }
         };
@@ -149,5 +174,6 @@ class WindowTransitionHandler {
     void reset() {
         cancelDebounce();
         lastUiChangeTs = 0;
+        lastTransitionTs = 0;
     }
 }

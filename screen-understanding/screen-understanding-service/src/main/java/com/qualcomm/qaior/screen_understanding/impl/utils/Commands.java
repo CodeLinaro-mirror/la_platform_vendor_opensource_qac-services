@@ -13,4 +13,5 @@ public final class Commands {
     public static final int CMD_START_SESSION = 1;
     public static final int CMD_UPDATE_SESSION = 2;
     public static final int CMD_STOP_SESSION = 3;
+    public static final int CMD_SET_CAPTURE_POLICY = 4;
 }
