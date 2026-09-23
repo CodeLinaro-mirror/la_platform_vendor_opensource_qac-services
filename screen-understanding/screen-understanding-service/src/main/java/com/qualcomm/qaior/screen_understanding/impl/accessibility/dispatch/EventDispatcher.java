@@ -42,6 +42,10 @@ public class EventDispatcher {
 
     private volatile String lastActivePackage = null;
 
+    /** Controls whether window-transition events (STATE_CHANGED / WINDOWS_CHANGED) trigger
+     *  a capture after debounce. False by default — click+scroll only. */
+    private volatile boolean onWindowTransition = false;
+
     /**
      * Volatile prevents stale-read; the single-writer guarantee (eventThread) makes the
      * write-then-postDelayed sequence safe without additional locking.
@@ -63,11 +67,18 @@ public class EventDispatcher {
                 mainHandler, rootNodeProvider, scrollTracker,
                 windowTransitionHandler, typingDetector,
                 captureCallback, this::cancelTrailingCapture);
+        windowTransitionHandler.setContentChangedHandler(contentChangedHandler);
     }
 
     /** Forward screen dimensions to ScrollTracker for the 70%-viewport gate. */
     public void setScreenSize(int width, int height) {
         scrollTracker.setScreenSize(width, height);
+    }
+
+    /** Sets the onWindowTransition capture policy.
+     *  Must only be called when no session is running. */
+    public void setOnWindowTransition(boolean value) {
+        onWindowTransition = value;
     }
 
     /**
@@ -94,13 +105,35 @@ public class EventDispatcher {
             return;
         }
 
+        // Extract click coordinates synchronously here on the accessibility callback thread,
+        // before the source view can detach (e.g. during back-navigation).
+        final String preExtractedClickTag;
+        if (eventType == AccessibilityEvent.TYPE_VIEW_CLICKED) {
+            AccessibilityNodeInfo source = event.getSource();
+            if (source != null) {
+                Rect rect = new Rect();
+                source.getBoundsInScreen(rect);
+                source.recycle();
+                preExtractedClickTag = rect.isEmpty() ? "" : "x=" + rect.centerX() + ",y=" + rect.centerY();
+            } else {
+                preExtractedClickTag = "";
+            }
+            final long tapWallClock = System.currentTimeMillis() - SystemClock.elapsedRealtime() + event.getEventTime();
+            final long deliveryLatencyMs = System.currentTimeMillis() - tapWallClock;
+            Log.i(TAG, "[TAP_LATENCY] tap_time_ms=" + tapWallClock
+                    + " service_received_ms=" + System.currentTimeMillis()
+                    + " delivery_latency_ms=" + deliveryLatencyMs);
+        } else {
+            preExtractedClickTag = null;
+        }
+
         final String appName = event.getPackageName() != null
                 ? event.getPackageName().toString() : "Unknown";
         final long timestamp = System.currentTimeMillis() - SystemClock.elapsedRealtime() + event.getEventTime();
 
         eventHandler.post(() -> {
             try {
-                dispatchOnEventThread(event, eventType, appName, timestamp);
+                dispatchOnEventThread(event, eventType, appName, timestamp, preExtractedClickTag);
             } finally {
                 event.recycle();
             }
@@ -112,12 +145,14 @@ public class EventDispatcher {
     // -------------------------------------------------------------------------
 
     private void dispatchOnEventThread(AccessibilityEvent event, int eventType,
-            String appName, long timestamp) {
+            String appName, long timestamp, String preExtractedClickTag) {
 
         // Typing detection
-        // Step 1: If this event itself is a typing signal (source.inputType != 0 or FOCUSED),
-        //         update the typing timestamp and drop it — no capture.
-        if (typingDetector.checkAndUpdateIfTyping(event)) {
+        // Step 1: If this event's source has inputType != 0, update the typing timestamp.
+        //         Drop non-click events — but allow TYPE_VIEW_CLICKED through so that taps
+        //         on input-type views (e.g. quantity steppers) are still captured with coordinates.
+        boolean isTypingSource = typingDetector.checkAndUpdateIfTyping(event);
+        if (isTypingSource && eventType != AccessibilityEvent.TYPE_VIEW_CLICKED) {
             Log.v(TAG, "[DISPATCH_EVENT_DROP] Typing event detected (type=" + eventType + "); suppressing capture.");
             return;
         }
@@ -155,6 +190,16 @@ public class EventDispatcher {
         if (eventType != AccessibilityEvent.TYPE_VIEW_SCROLLED
                 && scrollTracker.isUserScrolling()) {
             if (eventType != AccessibilityEvent.TYPE_VIEW_CLICKED) {
+                // A window transition arriving mid-scroll means the preceding scroll was
+                // rendering-induced (layout shift / reflow), not a real user scroll — a real
+                // scroll always stops before navigation completes. Still arm the render-settle
+                // window (and clear scroll state) before dropping, so the destination screen's
+                // settling scrolls are suppressed. Mirrors EventRouter.kt.
+                if (eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+                    cancelTrailingCapture();
+                    scrollTracker.resetScrollSession();
+                    windowTransitionHandler.markTransition();
+                }
                 Log.v(TAG, "[DISPATCH_EVENT_DROP] Dropping event " + eventType + " during active scroll");
                 return;
             } else {
@@ -172,11 +217,15 @@ public class EventDispatcher {
                     break;
                 }
 
-                if (windowTransitionHandler.isWaitingEvent()) {
-                    // Keep isUserScrolling() current during transitions; skip capture and trailing.
+                boolean inSettleOrTransition =
+                        windowTransitionHandler.isWaitingEvent() ||
+                        windowTransitionHandler.timeSinceTransition() < WindowTransitionHandler.RENDER_SETTLE_MS;
+                if (inSettleOrTransition) {
                     scrollTracker.markScrolling();
+                    Log.d(TAG, "[DISPATCH_CAPTURE_SKIP] type=scroll reason=transition_or_render_settle");
                     break;
                 }
+
                 // Reset click gate on every scroll.
                 clickDeduplicator.reset();
                 boolean capture = scrollTracker.shouldCapture(event, appName, captureCallback);
@@ -185,55 +234,55 @@ public class EventDispatcher {
                     scrollTracker.updateAllAfterCapture();
                     contentChangedHandler.updateUiScreenChangeTs();
                 }
-                scheduleTrailingCapture(appName);
+                if (capture) scheduleTrailingCapture(appName);
                 break;
             }
 
             case AccessibilityEvent.TYPE_VIEW_CLICKED: {
+                scrollTracker.markUserInteraction();
                 if (clickDeduplicator.checkAndConsume()) {
-                    String tag = "";
-                    AccessibilityNodeInfo source = event.getSource();
-                    if (source != null) {
-                        Rect rect = new Rect();
-                        source.getBoundsInScreen(rect);
-                        source.recycle();
-                        if (!rect.isEmpty()) {
-                            tag = "x=" + rect.centerX() + ",y=" + rect.centerY();
-                        }
+                    String tag = preExtractedClickTag != null ? preExtractedClickTag : "";
+                    if (tag.isEmpty()) {
+                        // Source detached — capture without coordinates rather than drop.
+                        Log.d(TAG, "[DISPATCH_CAPTURE] type=click no_coordinates");
                     }
                     Log.v(TAG, "tag " + tag);
                     captureCallback.onCapture(appName, eventType, timestamp, tag);
+                    contentChangedHandler.updateUiScreenChangeTs();
                 }
                 break;
             }
 
             case AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED: {
                 cancelTrailingCapture();
-                contentChangedHandler.updateUiScreenChangeTs();
+                windowTransitionHandler.markTransition();
                 windowTransitionHandler.startOrResetDebounce(
                         appName, eventType,
                         clickDeduplicator::reset,
-                        scrollTracker::resetScrollSession);
+                        scrollTracker::resetScrollSession, onWindowTransition);
                 break;
             }
 
             case AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED: {
                 // Light handling: re-arm click gate; then start the animation-wait debounce.
                 clickDeduplicator.reset();
-                contentChangedHandler.check(appName, timestamp);
+                // Content-changed captures are a window-transition capture — only run the
+                // stability poll when the policy allows it. Under the default
+                // (onWindowTransition=false, click+scroll only) these must be suppressed.
+                // Mirrors EventRouter.kt. clickDeduplicator.reset() stays unconditional.
+                if (onWindowTransition) {
+                    contentChangedHandler.check(appName, timestamp);
+                }
                 break;
             }
 
             case AccessibilityEvent.TYPE_WINDOWS_CHANGED: {
-                // Start a debounce: the handler resets click/scroll state and fires a capture
-                // once the UI is stable (300 ms quiet). Also cancel any in-flight trailing capture
-                // to avoid a spurious scroll_final firing mid-transition.
                 cancelTrailingCapture();
-                contentChangedHandler.updateUiScreenChangeTs();
+                windowTransitionHandler.markTransition();
                 windowTransitionHandler.startOrResetDebounce(
                         appName, eventType,
                         clickDeduplicator::reset,
-                        scrollTracker::resetScrollSession);
+                        scrollTracker::resetScrollSession, onWindowTransition);
                 break;
             }
 
@@ -256,9 +305,6 @@ public class EventDispatcher {
                 Log.d(TAG, "[DISPATCH_TIMER_FIRE] type=trailing_capture result=capture");
                 captureCallback.onCapture(appName, AccessibilityEvent.TYPE_VIEW_SCROLLED,
                         System.currentTimeMillis(), "scroll_final");
-                // Mirror Kotlin: reset per-widget state so the first scroll of the next burst
-                // isn't blocked by stale lastCapturedRect from this session.
-                scrollTracker.resetScrollSession();
             } else {
                 Log.d(TAG, "[DISPATCH_CAPTURE_SKIP] type=trailing_capture reason=" +
                 (scrollTracker.isUserScrolling() ? "still_scrolling" :
