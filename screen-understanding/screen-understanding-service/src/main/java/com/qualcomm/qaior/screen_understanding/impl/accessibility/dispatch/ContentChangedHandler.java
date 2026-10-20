@@ -53,11 +53,17 @@ class ContentChangedHandler {
      */
     private volatile boolean isWaitingUiAnimation = false;
 
+    // Set by checkAfterWindowSettled to carry the window eventType through to onStable,
+    // so the deferred capture fires with the right tag ("window_settled") instead of "".
+    private volatile boolean isWindowSettledPoll = false;
+    private volatile int     windowSettledEventType = 0;
+
     /**
      * Structural hash of the last captured accessibility tree.
      * Accessed only from the main looper callbacks and reset post.
      */
     private String currentNodeStructHash = "";
+    private int    currentRichness       = -1;
 
     ContentChangedHandler(Handler mainHandler, RootNodeProvider rootProvider,
             ScrollTracker scrollTracker, WindowTransitionHandler windowTransitionHandler,
@@ -103,7 +109,22 @@ class ContentChangedHandler {
         Log.v(TAG, "WINDOW_CONTENT_CHANGED: starting animation wait for " + appName);
 
         long startTime = System.currentTimeMillis();
-        scheduleStabilityPoll(appName, /* oldHash= */ "", /* stableCount= */ 0, startTime);
+        scheduleStabilityPoll(appName, /* oldKey= */ "", /* stableCount= */ 0, startTime);
+    }
+
+    /**
+     * Starts a proactive content-stability poll immediately after window_settled fires,
+     * bypassing the debounce gate. Allows the fully-loaded page state to be captured once
+     * network images settle, without waiting for a TYPE_WINDOW_CONTENT_CHANGED event that
+     * may have been dropped during the transition debounce window.
+     */
+    void checkAfterWindowSettled(String appName, int eventType) {
+        if (isWaitingUiAnimation) return;
+        isWaitingUiAnimation = true;
+        isWindowSettledPoll = true;
+        windowSettledEventType = eventType;
+        long startTime = System.currentTimeMillis();
+        scheduleStabilityPoll(appName, /* oldKey= */ "", 0, startTime);
     }
 
     /**
@@ -119,21 +140,21 @@ class ContentChangedHandler {
         isWaitingUiAnimation = false;
         lastUiScreenChangeTsMs = 0;
         // currentNodeStructHash is main-looper-only; post the clear to avoid a data race.
-        mainHandler.post(() -> currentNodeStructHash = "");
+        mainHandler.post(() -> { currentNodeStructHash = ""; currentRichness = -1; });
     }
 
     // -------------------------------------------------------------------------
     // Private — poll loop runs on main looper
     // -------------------------------------------------------------------------
 
-    private void scheduleStabilityPoll(String appName, String oldHash,
+    private void scheduleStabilityPoll(String appName, String oldKey,
             int stableCount, long startTime) {
         Log.i(TAG, "[DISPATCH_TIMER_CHECK] type=content_change poll_interval_ms=" + POLL_INTERVAL_MS);
         mainHandler.postDelayed(() ->
-                doPoll(appName, oldHash, stableCount, startTime), POLL_INTERVAL_MS);
+                doPoll(appName, oldKey, stableCount, startTime), POLL_INTERVAL_MS);
     }
 
-    private void doPoll(String appName, String oldHash, int stableCount, long startTime) {
+    private void doPoll(String appName, String oldKey, int stableCount, long startTime) {
         // Abort if any inhibitor became true while we were waiting.
         if (scrollTracker.isUserScrolling()) {
             Log.d(TAG, "WINDOW_CONTENT_CHANGED: scroll resumed; aborting animation wait.");
@@ -156,7 +177,7 @@ class ContentChangedHandler {
 
         if (root == null) {
             if (elapsed < CONTENT_CHANGED_DEBOUNCE_MS) {
-                scheduleStabilityPoll(appName, oldHash, stableCount, startTime);
+                scheduleStabilityPoll(appName, oldKey, stableCount, startTime);
             } else {
                 Log.d(TAG, "WINDOW_CONTENT_CHANGED: root null at timeout; fallback.");
                 onFallback();
@@ -164,42 +185,46 @@ class ContentChangedHandler {
             return;
         }
 
-        String newHash = nodeStructHash(root, new StringBuilder());
+        TreeSignature sig = signature(root);
         root.recycle();
 
-        int nextStableCount;
-        if (newHash.equals(oldHash)) {
-            nextStableCount = stableCount + 1;
-            if (nextStableCount >= STABLE_CYCLES_REQUIRED) {
-                onStable(appName, newHash);
-                return;
-            }
-        } else {
-            nextStableCount = 0;
+        // Stability keys on hash AND richness: text still streaming in keeps richness
+        // rising, changing the key and resetting stableCount each cycle.
+        String newKey = sig.hash + "#" + sig.richness;
+        int nextStableCount = newKey.equals(oldKey) ? stableCount + 1 : 0;
+        if (nextStableCount >= STABLE_CYCLES_REQUIRED) {
+            onStable(appName, sig);
+            return;
         }
 
         if (elapsed < CONTENT_CHANGED_DEBOUNCE_MS) {
-            scheduleStabilityPoll(appName, newHash, nextStableCount, startTime);
+            scheduleStabilityPoll(appName, newKey, nextStableCount, startTime);
         } else {
             Log.d(TAG, "WINDOW_CONTENT_CHANGED: timeout waiting for stable tree; fallback.");
             onFallback();
         }
     }
 
-    private void onStable(String appName, String stableHash) {
+    private void onStable(String appName, TreeSignature pollSig) {
         AccessibilityNodeInfo root = rootProvider.getRootInActiveWindow();
         isWaitingUiAnimation = false;
+        boolean wasWindowSettled = isWindowSettledPoll;
+        int settledEventType     = windowSettledEventType;
+        isWindowSettledPoll      = false;
+        windowSettledEventType   = 0;
 
         if (root == null) {
             Log.d(TAG, "[DISPATCH_CAPTURE_SKIP] WINDOW_CONTENT_CHANGED: root null after stabilisation; skip capture.");
             return;
         }
 
-        String finalHash = nodeStructHash(root, new StringBuilder());
+        TreeSignature finalSig = signature(root);
         root.recycle();
 
-        if (finalHash.equals(currentNodeStructHash)) {
-            Log.v(TAG, "[DISPATCH_CAPTURE_SKIP] WINDOW_CONTENT_CHANGED: structure unchanged; skip capture.");
+        boolean sameStructure = finalSig.hash.equals(currentNodeStructHash);
+        boolean richer        = finalSig.richness > currentRichness;
+        if (sameStructure && !richer) {
+            Log.v(TAG, "[DISPATCH_CAPTURE_SKIP] WINDOW_CONTENT_CHANGED: structure+richness unchanged; skip capture.");
             return;
         }
 
@@ -216,39 +241,50 @@ class ContentChangedHandler {
         // Cancel any pending trailing-scroll capture to avoid near-duplicate frames.
         cancelTrailing.run();
 
-        currentNodeStructHash = finalHash;
+        currentNodeStructHash = finalSig.hash;
+        currentRichness       = finalSig.richness;
         lastUiScreenChangeTsMs = System.currentTimeMillis();
-        Log.i(TAG, "[DISPATCH_TIMER_FIRE] type=content_changed result=capture hash_changed=true");
-        Log.v(TAG, "WINDOW_CONTENT_CHANGED: structure changed; firing capture for " + appName);
-        captureCallback.onCapture(appName, AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,
-                System.currentTimeMillis(), "");
+        if (wasWindowSettled) {
+            Log.i(TAG, "[DISPATCH_TIMER_FIRE] type=window_settled result=capture (deferred, content loaded)");
+            captureCallback.onCapture(appName, settledEventType,
+                    System.currentTimeMillis(), "window_settled");
+        } else {
+            Log.i(TAG, "[DISPATCH_TIMER_FIRE] type=content_changed result=capture hash_changed=true");
+            captureCallback.onCapture(appName, AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,
+                    System.currentTimeMillis(), "");
+        }
     }
 
     private void onFallback() {
         isWaitingUiAnimation = false;
+        isWindowSettledPoll  = false;
+        windowSettledEventType = 0;
         Log.d(TAG, "WINDOW_CONTENT_CHANGED: animation wait aborted; no capture.");
     }
 
-    /**
-     * Builds a structural fingerprint of the accessibility tree rooted at node.
-     * Appends className-windowId[child0_hash child1_hash ...] recursively.
-     *
-     *
-     * Caller is responsible for recycling node; children are recycled here.
-     */
-    private static String nodeStructHash(AccessibilityNodeInfo node, StringBuilder sb) {
-        sb.append(node.getClassName())
-          .append("-")
-          .append(node.getWindowId())
-          .append("[");
+    /** Struct hash + content-richness from one traversal. */
+    static final class TreeSignature {
+        final String hash;
+        final int richness;
+        TreeSignature(String hash, int richness) { this.hash = hash; this.richness = richness; }
+    }
+
+    private static int walk(AccessibilityNodeInfo node, StringBuilder sb) {
+        sb.append(node.getClassName()).append("-").append(node.getWindowId()).append("[");
+        CharSequence t  = node.getText();
+        CharSequence cd = node.getContentDescription();
+        int richness = ((t != null && t.length() > 0) || (cd != null && cd.length() > 0)) ? 1 : 0;
         for (int i = 0; i < node.getChildCount(); i++) {
             AccessibilityNodeInfo child = node.getChild(i);
-            if (child != null) {
-                nodeStructHash(child, sb);
-                child.recycle();
-            }
+            if (child != null) { richness += walk(child, sb); child.recycle(); }
         }
         sb.append("]");
-        return sb.toString();
+        return richness;
+    }
+
+    private static TreeSignature signature(AccessibilityNodeInfo root) {
+        StringBuilder sb = new StringBuilder();
+        int r = walk(root, sb);
+        return new TreeSignature(sb.toString(), r);
     }
 }

@@ -78,6 +78,9 @@ public class DisplayCaptureAccessibilityService extends AccessibilityService
                 case Commands.CMD_STOP_SESSION:
                     stopSession(config);
                     break;
+                case Commands.CMD_SET_CAPTURE_POLICY:
+                    setCapturePolicy(intent);
+                    break;
                 default:
                     Log.w(logTag, "unknown command " + command);
             }
@@ -162,10 +165,46 @@ public class DisplayCaptureAccessibilityService extends AccessibilityService
 
         NativeBridge bridge = SharedObjects.getNativeBridge();
         if (bridge != null && bridge.isConnected()) {
+            if (eventType == AccessibilityEvent.TYPE_VIEW_CLICKED) {
+                long captureLatencyMs = System.currentTimeMillis() - timestamp;
+                Log.i(logTag, "[TAP_LATENCY] tap_time_ms=" + timestamp
+                        + " capture_triggered_ms=" + System.currentTimeMillis()
+                        + " tap_to_capture_ms=" + captureLatencyMs);
+            }
+            // Single decoded record of WHAT triggered this capture — one line per capture that
+            // actually reaches native, sitting immediately before the NativeBridge log below.
+            Log.i(logTag, "[CAPTURE_TRIGGER] event=" + eventTypeName(eventType)
+                    + " reason=" + describeReason(eventType, tag)
+                    + " app=" + appName
+                    + " ts=" + timestamp
+                    + " tag=" + (tag == null || tag.isEmpty() ? "-" : tag));
             bridge.triggerCapture(sessionId, appName, eventType, timestamp, tag);
         } else {
             Log.e(logTag, "NativeBridge not connected");
         }
+    }
+
+    /** Human-readable AccessibilityEvent type for capture-trigger logging. */
+    private static String eventTypeName(int eventType) {
+        switch (eventType) {
+            case AccessibilityEvent.TYPE_VIEW_CLICKED:           return "CLICK";
+            case AccessibilityEvent.TYPE_VIEW_SCROLLED:          return "SCROLL";
+            case AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED:   return "STATE_CHANGED";
+            case AccessibilityEvent.TYPE_WINDOWS_CHANGED:        return "WINDOWS_CHANGED";
+            case AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED: return "CONTENT_CHANGED";
+            default:                                             return "TYPE_" + eventType;
+        }
+    }
+
+    /** Maps (eventType, tag) to the specific capture reason. */
+    private static String describeReason(int eventType, String tag) {
+        if ("window_settled".equals(tag))      return "window_settled";
+        if ("scroll_final".equals(tag))        return "trailing_scroll";
+        if ("scroll_highvel_prev".equals(tag)) return "highvel_intermediate";
+        if (eventType == AccessibilityEvent.TYPE_VIEW_CLICKED)           return "user_click";
+        if (eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED)          return "user_scroll";
+        if (eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) return "content_changed";
+        return "other";
     }
 
     /**
@@ -327,6 +366,28 @@ public class DisplayCaptureAccessibilityService extends AccessibilityService
         } catch (JSONException e) {
             Log.e(logTag, "Failed to create JSON for update config.", e);
         }
+    }
+
+    /**
+     * Updates the capture policy at runtime. Only allowed when no session is running.
+     *
+     * Usage:
+     *   adb shell am broadcast \
+     *     -a com.qualcomm.qaior.screen_understanding.impl.FORWARD_TO_ACCESSIBILITY \
+     *     --ei command 4 --ez on_window_transition true
+     */
+    private void setCapturePolicy(Intent intent) {
+        boolean value = intent.getBooleanExtra("on_window_transition", false);
+        if (ongoingSession) {
+            Log.w(logTag, "Cannot change capture policy while session is in progress");
+            return;
+        }
+        if (eventDispatcher == null) {
+            Log.w(logTag, "Cannot change capture policy: eventDispatcher not initialized");
+            return;
+        }
+        eventDispatcher.setOnWindowTransition(value);
+        Log.i(logTag, "Capture policy updated: on_window_transition=" + value);
     }
 
     @Override
