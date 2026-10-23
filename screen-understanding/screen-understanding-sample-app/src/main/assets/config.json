@@ -12,7 +12,7 @@
             },
             {
                 "packageName": "com.whatsapp",
-                "isSensitive": true
+                "isSensitive": false
             }
         ],
         "smartConfig": {
@@ -67,7 +67,7 @@
                         "min_cluster_size": 20
                     },
                     "rejectNonContentFrames": {
-                        "enabled": true
+                        "enabled": false
                     }
                 },
                 {
@@ -106,7 +106,7 @@
                         "min_cluster_size": 20
                     },
                     "rejectNonContentFrames": {
-                        "enabled": true
+                        "enabled": false
                     }
                 }
             ]
@@ -168,7 +168,7 @@
                         "min_cluster_size": 20
                     },
                     "rejectNonContentFrames": {
-                        "enabled": true
+                        "enabled": false
                     }
                 },
                 {
@@ -207,7 +207,7 @@
                         "min_cluster_size": 20
                     },
                     "rejectNonContentFrames": {
-                        "enabled": true
+                        "enabled": false
                     }
                 }
             ]
